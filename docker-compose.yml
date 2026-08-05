@@ -1,46 +1,74 @@
-# ================================================================
-# 下载流程优化工具 — docker-compose 配置
-# 使用方法：
-#   1. 飞牛 NAS：将此文件上传至 NAS，在 Docker Compose 中加载
-#   2. 通用：docker-compose up -d
-# 说明：本项目为 Windows 桌面 GUI 应用，容器仅用于环境验证
-# ================================================================
-
 version: "3.8"
+
+# ================================================================
+# 下载流程优化工具 — Docker Compose
+# 
+# 使用方法：
+#   1. 本地开发：  docker-compose up -d
+#   2. 飞牛 NAS： 将此文件粘贴到 Docker Compose 中直接使用
+#   3. 环境验证： docker-compose run app
+# 
+# 说明：本项目为 Windows Tkinter GUI 桌面应用，容器仅用于环境
+#       验证和依赖检查。实际应用请在 Windows 主机上运行。
+# ================================================================
 
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: download-optimizer:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: szboboxing/download-optimizer:latest
     container_name: download-optimizer
     restart: "no"
+    stdin_open: true
+    tty: true
     volumes:
       - ./data:/app/data
       - ./input:/app/input
       - ./output:/app/output
+      - ./logs:/app/logs
     environment:
       - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
+      - APP_ENV=docker
+      - APP_VERSION=3.5
+    healthcheck:
+      test: ["CMD", "python", "-c", "import openpyxl, requests; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
     command: >
       python -c "
-      import openpyxl, requests, json;
-      print('=== 下载流程优化工具 环境检查 ===');
-      print('openpyxl:', openpyxl.__version__);
-      print('requests:', requests.__version__);
-      print('Python 依赖全部就绪');
-      print('提示: 本工具为 Windows GUI 应用，请在 Windows 主机上运行 EXE 源码');
+      import sys, os, openpyxl, requests
+      print('=' * 50)
+      print('下载流程优化工具 Docker 环境验证')
+      print('=' * 50)
+      print(f'Python: {sys.version}')
+      print(f'openpyxl: {openpyxl.__version__}')
+      print(f'requests: {requests.__version__}')
+      print(f'时区: {os.environ.get(\"TZ\", \"UTC\")}')
+      print()
+      print('依赖检查通过 ✓')
+      print()
+      print('📋 使用说明:')
+      print('  1. 本工具为 Windows GUI 应用')
+      print('  2. 请下载 EXE 在 Windows 上运行')
+      print('  3. 下载地址: GitHub Releases')
+      print('  4. Docker 用于环境验证和飞牛 NAS')
+      print('=' * 50)
       "
 
-  # 可选：AI API 代理服务（用于 AI 助手模块的中转）
+  # AI API 代理服务（可选）
+  # 启动方式：docker-compose --profile proxy up -d
   api-proxy:
     image: nginx:alpine
     container_name: download-optimizer-proxy
     restart: "unless-stopped"
     ports:
       - "8080:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     environment:
       - TZ=Asia/Shanghai
     profiles:
@@ -48,5 +76,12 @@ services:
 
 volumes:
   data:
+    driver: local
   input:
+    driver: local
   output:
+    driver: local
+
+networks:
+  default:
+    driver: bridge
