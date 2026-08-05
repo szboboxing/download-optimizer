@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+.venv/
+.conda/
+
+# Build artifacts
+build/
+*.spec
+*.manifest
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test data
+测试数据/
+数据/
+租金/
+
+# Logs
+*.log
+logs/
+
+# User config
+config.ini
+api_keys.json
+
+# Project specific
+电脑批量改名工具.py
+电脑批量改名工具_v*.spec
+下载流程优化工具_v3.*.spec
+飞牛NAS娱乐版.py
+batch_rename.py
+test_cf.py
+test_spec.py
+index.html
+租金/
+
+# EXE files (published via GitHub Releases)
+*.exe
