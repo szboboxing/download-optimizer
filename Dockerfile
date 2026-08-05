@@ -1,35 +1,65 @@
 # ================================================================
-# 下载流程优化工具 — Dockerfile (用于 CI/CD 构建环境)
-# 注意：本项目为 Windows Tkinter 桌面 GUI 应用，不适合直接在
-# Docker 容器中运行。Dockerfile 用于自动化构建和测试。
+# 下载流程优化工具 — Dockerfile
+# 多阶段构建：builder（构建环境）+ runtime（运行环境）
 # ================================================================
 
 FROM python:3.13-slim AS builder
 
-WORKDIR /app
+LABEL maintainer="szboboxing" \
+      project="download-optimizer" \
+      version="3.5" \
+      description="下载流程优化工具 - 批量重命名与规约上传"
+
+WORKDIR /build
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY main.py app.py .
+COPY README.md LICENSE .
 
 # 验证代码语法
-RUN python -m py_compile 下载流程优化工具_v3.5.py
+RUN python -c "import py_compile; py_compile.compile('app.py', doraise=True); print('app.py syntax OK')"
+RUN python -c "import py_compile; py_compile.compile('main.py', doraise=True); print('main.py syntax OK')"
 
-# 生成可执行文件（在 Windows 主机上执行，此处仅验证语法）
-CMD ["python", "-c", "print('Build environment ready')"]
+# 验证依赖导入
+RUN python -c "import openpyxl; import requests; print('Dependencies OK')"
 
 
 # ================================================================
-# 多阶段：生产镜像（仅供开发测试环境使用）
+# 运行阶段
 # ================================================================
 FROM python:3.13-slim AS runtime
 
+LABEL maintainer="szboboxing" \
+      project="download-optimizer" \
+      version="3.5"
+
 WORKDIR /app
 
-COPY --from=builder /app .
+# 从构建阶段复制产物
+COPY --from=builder /build /app
 
-# 运行单元测试
-RUN python -c "import openpyxl; import requests; print('Dependencies OK')"
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=Asia/Shanghai \
+    APP_HOME=/app
 
-CMD ["python", "-c", "print('下载流程优化工具 - 请在 Windows 主机上运行')"]
+# 创建数据目录
+RUN mkdir -p /app/data /app/input /app/output /app/logs
+
+# 设置非 root 用户运行（安全最佳实践）
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import openpyxl, requests; print('Health OK')" || exit 1
+
+# 默认入口：显示版本和环境信息
+ENTRYPOINT ["python", "-c", "\nimport sys, openpyxl, requests\nprint('='*50)\nprint('下载流程优化工具 Docker 环境')\nprint('='*50)\nprint(f'Python: {sys.version}')\nprint(f'openpyxl: {openpyxl.__version__}')\nprint(f'requests: {requests.__version__}')\nprint('依赖检查通过 ✓')\nprint('应用需在 Windows 主机上运行，请下载 EXE:')\nprint('https://github.com/szboboxing/download-optimizer/releases')\n"]
+
+CMD ["--help"]
