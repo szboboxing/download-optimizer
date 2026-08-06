@@ -27,14 +27,15 @@
 
 ```
 需要上传的文件清单：
-├── 下载流程优化工具_v3.5.py   ← 主程序
+├── main.py                    ← 启动入口
+├── app.py                     ← 主程序
 ├── requirements.txt           ← 依赖列表
 ├── Dockerfile                 ← Docker 配置
 ├── docker-compose.yml        ← 飞牛 NAS 配置
 ├── .gitignore                 ← 忽略规则
 ├── README.md                  ← 项目说明
 ├── LICENSE                    ← MIT 许可证
-└── dist/下载流程优化工具_v3.5.exe  ← 可执行文件（Release 附件）
+└── dist/下载流程优化工具_v3.11.exe ← 可执行文件（Release 附件）
 ```
 
 ---
@@ -96,7 +97,7 @@ git config --global user.email "your-email@example.com"
 | 字段 | 填写内容 | 说明 |
 |------|----------|------|
 | Repository name | `download-optimizer` | 仓库名称，建议用英文 |
-| Description | `下载流程优化工具 - 批量重命名与规约上传` | 可选，项目简介 |
+| Description | `下载流程优化工具 - 批量重命名、规约上传数据表准备与 AI 助手` | 可选，项目简介 |
 | Visibility | **Public** | 公开仓库（免费用户只能选这个） |
 | Initialize with README | **勾选** | 初始化一个 README |
 
@@ -131,17 +132,18 @@ git clone https://github.com/your-name/download-optimizer.git
 cd download-optimizer
 
 # 3. 将所有项目文件复制到这个目录
-# （手动复制 下载流程优化工具_v3.5.py, README.md, requirements.txt 等）
+# （手动复制 main.py、app.py、README.md、requirements.txt 等）
 
 # 4. 添加所有文件到暂存区
 git add .
 
 # 5. 提交更改
-git commit -m "feat: 初始化下载流程优化工具 v3.5
+git commit -m "feat: 发布下载流程优化工具 v3.11
 
 - 批量重命名文件夹功能
 - 批量重命名文件功能
-- 规约上传比对功能
+- 规约上传数据表准备支持自选比对列
+- 复用现有 K/L 状态列并识别重复匹配
 - AI 智能助手模块
 - Docker / docker-compose 配置
 - MIT 许可证"
@@ -184,23 +186,23 @@ Release 是 GitHub 上发布可下载版本的功能。
 
 | 字段 | 填写内容 |
 |------|----------|
-| Choose a tag | 输入 `v3.5` → 按回车创建 |
-| Release title | `下载流程优化工具 v3.5` |
+| Choose a tag | 输入 `v3.11` → 按回车创建 |
+| Release title | `下载流程优化工具 v3.11` |
 | Description | 使用下方模板 |
 
 ### Release 描述模板
 
 ```markdown
-## 🚀 下载流程优化工具 v3.5
+## 🚀 下载流程优化工具 v3.11
 
 ### 📋 更新内容
 
-- ✨ **规约上传模块**：新增比对生成报网公司结算数据表格功能
-- 🎨 **UI 优化**：主界面图标改为橙黄色盾牌+对勾设计
-- 🐛 **Bug 修复**：
-  - 修复合并单元格导致的读取错误
-  - 修复条件格式化公式引用稳定性
-- 📦 **版本**：升级至 v3.5
+- 🧱 **不再增列**：规约上传直接使用现有 K/L 状态列
+- ♻️ **保留旧状态**：本次未匹配的 K/L 内容保持不变
+- 🔁 **重复识别**：已标注数据再次匹配时，L 列显示“待上传（重复）”
+- ☑️ **控件同步**：行置顶后重建 K 列复选框并保留勾选状态
+- 🛡️ **安全校验**：未识别到“复核/需上传”表头时停止处理
+- 📦 **版本**：升级至 v3.11
 
 ### 💻 系统要求
 
@@ -209,7 +211,7 @@ Release 是 GitHub 上发布可下载版本的功能。
 
 ### 📥 安装方法
 
-1. 点击下方 **Assets** 区域的 `下载流程优化工具_v3.5.exe`
+1. 点击下方 **Assets** 区域的 `下载流程优化工具_v3.11.exe`
 2. 保存到本地
 3. 双击运行即可
 
@@ -232,13 +234,13 @@ docker-compose up -d
 ### 上传 EXE 附件
 
 1. 在 Release 编辑页面找到 **Attach binaries by dropping them here or selecting them**
-2. 将 `dist/下载流程优化工具_v3.5.exe` 拖拽到上传区域
+2. 将 `dist/下载流程优化工具_v3.11.exe` 拖拽到上传区域
 3. 等待上传完成（文件较大时耐心等待）
 4. 点击 **Publish release** 按钮
 
 ### 验证 Release
 
-在仓库 **Releases** 页面，应该能看到刚发布的版本。点击 `下载流程优化工具_v3.5.exe` 即可下载。
+在仓库 **Releases** 页面，应该能看到刚发布的版本。点击 `下载流程优化工具_v3.11.exe` 即可下载。
 
 ---
 
@@ -251,7 +253,7 @@ docker-compose up -d
 3. 点击 **添加 Compose** 按钮
 4. 填写信息：
    - **名称**：`下载流程优化工具`
-   - **描述**：`批量重命名与规约上传工具`
+   - **描述**：`批量重命名、规约上传数据表准备与 AI 助手`
    - **Compose 内容**：粘贴仓库中 `docker-compose.yml` 的内容
 5. 点击 **立即启动**
 6. 等待容器状态变为 **运行中**
@@ -335,7 +337,7 @@ git clone https://gitee.com/your-name/download-optimizer.git
 # 2. 添加
 git add .
 # 3. 提交（可以写更详细的提交信息）
-git commit -m "fix: 修复规约上传比对逻辑"
+git commit -m "fix: 修复规约上传数据表准备比对逻辑"
 # 4. 推送
 git push origin main
 # 5. GitHub 会自动更新仓库内容
@@ -345,7 +347,7 @@ git push origin main
 
 重复第五步的操作：
 1. 点击 Releases → Draft a new release
-2. Tag version 填入新版本号（如 `v3.6`）
+2. Tag version 填入新版本号（如 `v3.11`）
 3. 上传新的 EXE
 4. 发布
 
@@ -386,7 +388,7 @@ jobs:
         with:
           python-version: '3.13'
       - run: pip install -r requirements.txt pyinstaller
-      - run: pyinstaller --onefile --name "下载流程优化工具_${{ github.ref_name }}" --hidden-import win32com --hidden-import win32com.client --hidden-import pythoncom --hidden-import pywintypes --noconsole 下载流程优化工具_v3.5.py
+      - run: pyinstaller --onefile --name "下载流程优化工具_${{ github.ref_name }}" --hidden-import win32com --hidden-import win32com.client --hidden-import pythoncom --hidden-import pywintypes --noconsole main.py
       - uses: actions/upload-artifact@v4
         with:
           name: exe-artifact

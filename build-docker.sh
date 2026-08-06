@@ -12,7 +12,7 @@
 set -e
 
 IMAGE_NAME="download-optimizer"
-IMAGE_TAG="v3.5"
+IMAGE_TAG="v3.11"
 DOCKER_HUB_USER="${DOCKER_HUB_USER:-szboboxing}"
 FULL_IMAGE="${DOCKER_HUB_USER}/${IMAGE_NAME}:${IMAGE_TAG}"
 LATEST_IMAGE="${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
@@ -29,7 +29,7 @@ log_warn()  { echo -e "${COLOR_YELLOW}[WARN]${COLOR_RESET} $*"; }
 log_error() { echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $*"; }
 
 usage() {
-    echo "下载流程优化工具 v3.5 — Docker 构建脚本"
+    echo "下载流程优化工具 v3.11 — Docker 构建脚本"
     echo ""
     echo "用法: $0 [选项]"
     echo ""

@@ -1,10 +1,10 @@
 # 下载流程优化工具
 
-> 一个用于批量重命名文件夹/文件、规约上传比对、AI 智能助手的 Windows 桌面 GUI 应用。
+> 一个用于批量重命名文件夹/文件、规约上传数据表准备和 AI 智能助手的 Windows 桌面 GUI 应用。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-v3.5-green.svg)](https://github.com/szboboxing/download-optimizer/releases)
+[![Version](https://img.shields.io/badge/version-v3.11-green.svg)](https://github.com/szboboxing/download-optimizer/releases)
 
 ---
 
@@ -14,7 +14,7 @@
 |------|------|
 | 📁 批量重命名文件夹 | 删除前 N 位字符 / 前加内容 / 后加内容，支持预览和一键回退 |
 | 📄 批量重命名文件 | 添加日期、版本号、自定义字符，灵活配置 |
-| 📋 规约上传 | WPS 表格与文件名比对，自动插入复选框、条件格式化 |
+| 📋 规约上传数据表准备 | 自选比对列，复用现有 K/L 状态列并识别重复数据 |
 | 🤖 AI 智能助手 | 支持豆包 / DeepSeek / 元宝 / 硅基流动 等多平台 |
 
 ## 核心功能详解
@@ -31,12 +31,19 @@
 - **批量添加版本号**：自动递增版本号
 - **添加自定义字符**：指定字符和数量
 
-### 规约上传
+### 规约上传数据表准备
 - 复制 WPS 表格并打开修改
-- 文件名与表格 S 列 / A 列自动比对
+- 文件名横杠左边默认比对表格 S 列，横杠右边默认比对表格 A 列
+- 两个比对列均为可编辑选择框，可直接填写 W 等 A 至 XFD 范围内的列
+- 左右任一侧内容匹配即视为匹配，原有生成规则保持不变
 - 匹配行置顶到第 5 行开始
-- 插入复选框（K 列）+ 状态文字（L 列）
+- 直接使用现有 K 列“复核”和 L 列“需上传”，不再插入新列
+- 新匹配行在现有 K/L 中生成复选框和状态公式
+- 已有状态的匹配行保留 K 列原值，并将 L 列改为“待上传（重复）”
+- 本次未匹配的旧状态保持不变，行重排后自动同步复选框位置
+- 生成完成后自动隐藏并折叠 K、L 列，状态数据和复选框仍保留
 - 条件格式化：勾选后行背景 `#EBF1DE`、文字 `#00B050` 绿色加粗
+- 术语与状态逻辑：[K/L 上传状态联动说明（Word）](./K-L上传状态联动说明.docx)
 
 ### AI 智能助手
 - 支持主流 AI 平台：豆包、DeepSeek、元宝、硅基流动
@@ -55,7 +62,7 @@
 
 ### 方式一：下载 EXE（推荐普通用户）
 
-前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `下载流程优化工具_v3.5.exe`，双击即可运行。
+前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `下载流程优化工具_v3.11.exe`，双击即可运行。
 
 ### 方式二：源码运行（开发者）
 
@@ -101,7 +108,7 @@ download-optimizer/
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --name "下载流程优化工具_v3.5" ^
+pyinstaller --onefile --name "下载流程优化工具_v3.11" ^
     --hidden-import win32com --hidden-import win32com.client ^
     --hidden-import pythoncom --hidden-import pywintypes ^
     --noconsole main.py
@@ -110,6 +117,32 @@ pyinstaller --onefile --name "下载流程优化工具_v3.5" ^
 ---
 
 ## 更新日志
+
+### v3.11 (2026-08-07)
+- 🧱 规约上传直接复用现有 K/L 状态列，不再重复增列
+- ♻️ 保留已有 K 列状态及本次未匹配行的原有 L 列内容
+- 🔁 已标注数据再次匹配时，将 L 列改为“待上传（重复）”
+- ☑️ 行置顶后重建并同步全部 K 列复选框，保留原勾选状态
+- 🛡️ 新增 K/L 表头安全校验，避免覆盖普通业务列
+- 📄 随版本提供《K/L 上传状态联动说明》Word 文档
+- 📦 构建 Windows 单文件 EXE
+
+### v3.10 (2026-08-07)
+- 🧹 移除已取消的双表状态同步功能及首页入口
+- ✏️ 规约上传新增两个可编辑比对列选择框，默认保持横杠左边对应 S 列、右边对应 A 列
+- 🔎 支持直接输入 W 等 A 至 XFD 范围内的列，左右任一侧匹配规则保持不变
+- 🙈 生成完成后自动隐藏并折叠 K、L 列
+- ✅ 新增 K/L 隐藏状态校验，并确认复选框、公式和前四行表头格式完整保留
+- 📦 构建 Windows 单文件 EXE
+
+### v3.7 - v3.9 (2026-08-06)
+- 历史过渡版本；相关试验功能已在 v3.10 中移除
+
+### v3.6 (2026-08-06)
+- 📝 「规约上传」更名为「规约上传数据表准备」
+- 🐛 修复生成文件前四行表头合并区域和样式错乱
+- 🔧 比对与重排严格从第 5 行开始，完整保留表头行高和原列宽
+- 📦 重新构建 Windows 单文件 EXE
 
 ### v3.5 (2025-08-06)
 - 🎨 应用标题改为「下载流程优化工具」

@@ -3,14 +3,16 @@ import json
 import base64
 import threading
 import tkinter as tk
+from copy import copy
 import requests
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 try:
     import openpyxl
+    from openpyxl.cell.cell import MergedCell
     from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-    from openpyxl.utils import get_column_letter
+    from openpyxl.utils import get_column_letter, column_index_from_string
     from openpyxl.formatting.rule import FormulaRule
     import shutil
     HAS_OPENPYXL = True
@@ -28,6 +30,201 @@ TEXT_PRIMARY = "#212121"
 TEXT_SECONDARY = "#666666"
 TEXT_MUTED = "#9E9E9E"
 BORDER = "#E0E0E0"
+APP_VERSION = "3.11"
+
+SPEC_HEADER_ROWS = 4
+SPEC_DATA_START_ROW = SPEC_HEADER_ROWS + 1
+SPEC_CHECKBOX_COLUMN = 11
+SPEC_UPLOAD_STATUS_COLUMN = 12
+SPEC_DUPLICATE_STATUS = "待上传（重复）"
+SPEC_DEFAULT_LEFT_COLUMN = "S"
+SPEC_DEFAULT_RIGHT_COLUMN = "A"
+SPEC_COLUMN_CHOICES = tuple(
+    chr(column) for column in range(ord("A"), ord("Z") + 1)
+) + tuple(
+    f"A{chr(column)}" for column in range(ord("A"), ord("Z") + 1)
+)
+
+
+def _snapshot_worksheet_row(ws, row_number, max_column):
+    cells = []
+    for column in range(1, max_column + 1):
+        cell = ws.cell(row=row_number, column=column)
+        cells.append({
+            "value": cell.value,
+            "style": copy(cell._style),
+            "hyperlink": copy(cell.hyperlink),
+            "comment": copy(cell.comment),
+        })
+
+    row_dimension = None
+    if row_number in ws.row_dimensions:
+        row_dimension = copy(ws.row_dimensions[row_number])
+    return cells, row_dimension
+
+
+def _restore_worksheet_row(ws, row_number, snapshot):
+    cells, row_dimension = snapshot
+    for column, cell_data in enumerate(cells, start=1):
+        cell = ws.cell(row=row_number, column=column)
+        if isinstance(cell, MergedCell):
+            continue
+        cell.value = cell_data["value"]
+        cell._style = copy(cell_data["style"])
+        cell.hyperlink = copy(cell_data["hyperlink"])
+        cell.comment = copy(cell_data["comment"])
+
+    if row_dimension is None:
+        ws.row_dimensions.pop(row_number, None)
+    else:
+        restored_dimension = copy(row_dimension)
+        restored_dimension.index = row_number
+        ws.row_dimensions[row_number] = restored_dimension
+
+
+def _reorder_worksheet_rows(ws, ordered_rows, start_row, max_column):
+    snapshots = {
+        row_number: _snapshot_worksheet_row(ws, row_number, max_column)
+        for row_number in ordered_rows
+    }
+    for target_row, source_row in enumerate(ordered_rows, start=start_row):
+        _restore_worksheet_row(ws, target_row, snapshots[source_row])
+
+
+def _normalize_spec_compare_columns(left_column, right_column):
+    def normalize(value, field_name):
+        label = str(value or "").strip().upper()
+        if (
+            not label
+            or len(label) > 3
+            or any(character < "A" or character > "Z" for character in label)
+        ):
+            raise ValueError(
+                f"{field_name}“{value}”无效，请输入 A 至 XFD 范围内的列字母"
+            )
+        try:
+            index = column_index_from_string(label)
+        except ValueError as error:
+            raise ValueError(f"{field_name}“{value}”无效") from error
+        if index > 16384:
+            raise ValueError(f"{field_name}“{label}”超出 XFD 列")
+        return label, index
+
+    left_label, left_index = normalize(
+        left_column, "横杠左边对应列"
+    )
+    right_label, right_index = normalize(
+        right_column, "横杠右边对应列"
+    )
+    return left_label, left_index, right_label, right_index
+
+
+def _validate_spec_compare_columns(excel_data, compare_columns):
+    max_column = max((len(row) for row in excel_data), default=0)
+    missing_columns = [
+        label
+        for label, index in (
+            (compare_columns[0], compare_columns[1]),
+            (compare_columns[2], compare_columns[3]),
+        )
+        if index > max_column
+    ]
+    if missing_columns:
+        last_column = get_column_letter(max_column) if max_column else "无"
+        raise ValueError(
+            f"表格最大列为 {last_column}，不存在所选列："
+            f"{'、'.join(missing_columns)}"
+        )
+
+
+def _spec_row_value(row, column_index):
+    if column_index <= 0 or column_index > len(row):
+        return ""
+    return str(row[column_index - 1]).strip()
+
+
+def _spec_status_is_marked(checkbox_value, upload_status):
+    return (
+        checkbox_value not in (None, "")
+        or upload_status not in (None, "")
+    )
+
+
+def _validate_spec_status_columns(excel_data):
+    max_column = max((len(row) for row in excel_data), default=0)
+    if max_column < SPEC_UPLOAD_STATUS_COLUMN:
+        raise ValueError(
+            "表格中不存在现有 K/L 状态列，已停止处理且不会新增列"
+        )
+
+    header_rows = excel_data[:SPEC_HEADER_ROWS]
+    checkbox_headers = {
+        _spec_row_value(row, SPEC_CHECKBOX_COLUMN)
+        for row in header_rows
+    }
+    upload_headers = {
+        _spec_row_value(row, SPEC_UPLOAD_STATUS_COLUMN)
+        for row in header_rows
+    }
+    if "复核" not in checkbox_headers or "需上传" not in upload_headers:
+        raise ValueError(
+            "未识别到现有 K 列“复核”和 L 列“需上传”表头。"
+            "为避免覆盖原数据，已停止处理且不会新增列"
+        )
+
+
+def _spec_status_formula(row_number):
+    return f'=IF(K{row_number}=TRUE,"已完成上传","待上传")'
+
+
+def _is_spec_status_formula(value):
+    return (
+        isinstance(value, str)
+        and value.startswith("=IF(")
+        and '"已完成上传"' in value
+        and '"待上传"' in value
+    )
+
+
+def _set_worksheet_columns_hidden(ws, start_column, end_column):
+    for column in range(start_column, end_column + 1):
+        dimension = ws.column_dimensions[get_column_letter(column)]
+        dimension.hidden = True
+        dimension.outlineLevel = max(dimension.outlineLevel or 0, 1)
+    ws.column_dimensions[
+        get_column_letter(end_column + 1)
+    ].collapsed = True
+
+
+def _worksheet_columns_are_hidden(ws, start_column, end_column):
+    for column in range(start_column, end_column + 1):
+        if not any(
+            dimension.hidden
+            and (
+                dimension.min
+                if dimension.min is not None
+                else column_index_from_string(key)
+            ) <= column
+            and (
+                dimension.max
+                if dimension.max is not None
+                else column_index_from_string(key)
+            ) >= column
+            for key, dimension in ws.column_dimensions.items()
+        ):
+            return False
+    return True
+
+
+def _workbook_columns_are_hidden(file_path, start_column, end_column):
+    wb = openpyxl.load_workbook(file_path, read_only=False)
+    try:
+        return _worksheet_columns_are_hidden(
+            wb.active, start_column, end_column
+        )
+    finally:
+        wb.close()
+
 
 AI_PROVIDERS = {
     "硅基流动": {
@@ -66,8 +263,8 @@ AI_PROVIDERS = {
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("下载流程优化工具 v3.5")
-        self.root.geometry("860x600")
+        self.root.title(f"下载流程优化工具 v{APP_VERSION}")
+        self.root.geometry("860x650")
         self.root.configure(bg=BG_COLOR)
         self.root.resizable(False, False)
         self._setup_styles()
@@ -104,12 +301,14 @@ class MainApp:
         tk.Label(container, text="下载流程优化工具",
                  font=("Microsoft YaHei", 22, "bold"),
                  fg=ACCENT, bg=BG_COLOR).pack(pady=(10, 4))
-        tk.Label(container, text="v3.5  —  选择一种模式开始",
+        tk.Label(container, text=f"v{APP_VERSION}  —  选择一种模式开始",
                  font=("Microsoft YaHei", 10),
                  fg=TEXT_SECONDARY, bg=BG_COLOR).pack(pady=(0, 20))
 
         cards_frame = tk.Frame(container, bg=BG_COLOR)
         cards_frame.pack(pady=10)
+        cards_frame.columnconfigure(0, weight=1, minsize=360)
+        cards_frame.columnconfigure(1, weight=1, minsize=360)
 
         self._create_mode_card(cards_frame, "📁", "批量重命名文件夹",
                                 "删除前N位字符 或 后加内容", None,
@@ -120,7 +319,7 @@ class MainApp:
         self._create_mode_card(cards_frame, "🤖", "AI 智能助手",
                                 "对话式 AI，支持多平台切换", None,
                                 PURPLE, self._open_ai_chat, 1, 0)
-        self._create_mode_card(cards_frame, "__shield_check__", "规约上传",
+        self._create_mode_card(cards_frame, "__shield_check__", "规约上传数据表准备",
                                 "比对生成报网公司结算数据表格",
                                 "上传第三方填写审定信息",
                                 "#FF9800", self._open_spec_upload, 1, 1)
@@ -140,11 +339,16 @@ class MainApp:
         c.create_polygon(35, 46, 30, 52, 40, 52, fill="#F57C00", outline="")
         return c
 
-    def _create_mode_card(self, parent, icon, title, desc, desc2, color, cmd, row, col):
+    def _create_mode_card(
+            self, parent, icon, title, desc, desc2, color, cmd, row, col,
+            columnspan=1):
         card = tk.Frame(parent, bg=CARD_COLOR, cursor="hand2",
                         highlightbackground=BORDER,
                         highlightthickness=1)
-        card.grid(row=row, column=col, padx=12, pady=8, sticky="nsew")
+        card.grid(
+            row=row, column=col, columnspan=columnspan,
+            padx=12, pady=8, sticky="nsew"
+        )
 
         inner = tk.Frame(card, bg=CARD_COLOR)
         inner.pack(padx=24, pady=28)
@@ -218,15 +422,14 @@ class MainApp:
             import traceback
             traceback.print_exc()
             try:
-                messagebox.showerror("启动错误", f"规约上传启动失败：\n{e}")
+                messagebox.showerror("启动错误", f"规约上传数据表准备启动失败：\n{e}")
             except Exception:
                 pass
-
 
 class FolderRenameApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("批量文件夹重命名工具 v3.5")
+        self.root.title(f"批量文件夹重命名工具 v{APP_VERSION}")
         self.root.geometry("700x680")
         self.root.configure(bg=BG_COLOR)
         self.root.resizable(False, False)
@@ -629,7 +832,7 @@ class FolderRenameApp:
 class FileRenameApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("批量文件重命名工具 v3.5")
+        self.root.title(f"批量文件重命名工具 v{APP_VERSION}")
         self.root.geometry("700x680")
         self.root.configure(bg=BG_COLOR)
         self.root.resizable(False, False)
@@ -1050,13 +1253,19 @@ class FileRenameApp:
 class SpecUploadApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("规约上传 v3.5")
+        self.root.title(f"规约上传数据表准备 v{APP_VERSION}")
         self.root.geometry("800x720")
         self.root.configure(bg=BG_COLOR)
         self.root.resizable(False, False)
 
         self.excel_path = tk.StringVar()
         self.folder_path = tk.StringVar()
+        self.left_compare_column = tk.StringVar(
+            value=SPEC_DEFAULT_LEFT_COLUMN
+        )
+        self.right_compare_column = tk.StringVar(
+            value=SPEC_DEFAULT_RIGHT_COLUMN
+        )
         self.status_text = tk.StringVar(value="请选择 WPS 表格文件和目标文件夹")
         self.progress_var = tk.DoubleVar(value=0.0)
 
@@ -1105,7 +1314,7 @@ class SpecUploadApp:
 
         header = tk.Frame(container, bg=BG_COLOR)
         header.pack(fill="x", pady=(0, 8))
-        ttk.Label(header, text="📋 规约上传 — 上传第三方填写审定信息",
+        ttk.Label(header, text="📋 规约上传数据表准备 — 上传第三方填写审定信息",
                   font=("Microsoft YaHei", 14, "bold"),
                   foreground="#FF9800", background=BG_COLOR).pack(side="left")
         back_btn = tk.Label(header, text="← 返回主菜单",
@@ -1155,18 +1364,42 @@ class SpecUploadApp:
         tk.Label(rule_inner, text="文件名格式：",
                  font=("Microsoft YaHei", 10, "bold"),
                  bg=CARD_COLOR, fg=TEXT_PRIMARY).grid(row=0, column=0, sticky="w")
-        tk.Label(rule_inner, text="S-A  (名称-审定编号)",
+        tk.Label(rule_inner, text="横杠左边 - 横杠右边",
                  font=("Microsoft YaHei", 11),
                  bg=CARD_COLOR, fg=ACCENT).grid(row=0, column=1, sticky="w", padx=(4, 12))
-        tk.Label(rule_inner, text="横杠左边 → 表格S列",
+        tk.Label(rule_inner, text="任一侧匹配；使用现有 K/L，不新增列",
                  font=("Microsoft YaHei", 9),
-                 bg=CARD_COLOR, fg=TEXT_SECONDARY).grid(row=0, column=2, sticky="w")
-        tk.Label(rule_inner, text="横杠右边 → 表格A列",
+                 bg=CARD_COLOR, fg=TEXT_SECONDARY).grid(
+                     row=0, column=2, columnspan=4, sticky="w"
+                 )
+
+        tk.Label(rule_inner, text="横杠左边 → 表格",
                  font=("Microsoft YaHei", 9),
-                 bg=CARD_COLOR, fg=TEXT_SECONDARY).grid(row=0, column=3, sticky="w", padx=(16, 0))
-        tk.Label(rule_inner, text="J列后插入新列",
+                 bg=CARD_COLOR, fg=TEXT_SECONDARY).grid(
+                     row=1, column=0, sticky="w", pady=(8, 0)
+                 )
+        ttk.Combobox(
+            rule_inner,
+            textvariable=self.left_compare_column,
+            values=SPEC_COLUMN_CHOICES,
+            width=6,
+        ).grid(row=1, column=1, sticky="w", padx=(4, 16), pady=(8, 0))
+        tk.Label(rule_inner, text="横杠右边 → 表格",
                  font=("Microsoft YaHei", 9),
-                 bg=CARD_COLOR, fg=TEXT_MUTED).grid(row=0, column=4, sticky="w", padx=(16, 0))
+                 bg=CARD_COLOR, fg=TEXT_SECONDARY).grid(
+                     row=1, column=2, sticky="w", pady=(8, 0)
+                 )
+        ttk.Combobox(
+            rule_inner,
+            textvariable=self.right_compare_column,
+            values=SPEC_COLUMN_CHOICES,
+            width=6,
+        ).grid(row=1, column=3, sticky="w", padx=(4, 16), pady=(8, 0))
+        tk.Label(rule_inner, text="默认 S / A；可直接输入 A-XFD",
+                 font=("Microsoft YaHei", 9),
+                 bg=CARD_COLOR, fg=TEXT_MUTED).grid(
+                     row=1, column=4, columnspan=2, sticky="w", pady=(8, 0)
+                 )
 
         action_row = tk.Frame(container, bg=BG_COLOR)
         action_row.pack(fill="x", pady=(0, 8))
@@ -1200,7 +1433,7 @@ class SpecUploadApp:
         log_card = ttk.LabelFrame(container, text=" 日志 / 报告 ",
                                     style="Card.TLabelframe", padding=10)
         log_card.pack(fill="both", expand=True)
-        self.log_text = tk.Text(log_card, height=15, font=("Consolas", 9),
+        self.log_text = tk.Text(log_card, height=12, font=("Consolas", 9),
                                  state="disabled", relief="flat",
                                  bg="#FAFAFA", fg=TEXT_PRIMARY,
                                  selectbackground="#FF9800", selectforeground="white",
@@ -1273,6 +1506,15 @@ class SpecUploadApp:
                 })
         return files_info
 
+    def _get_compare_columns(self):
+        compare_columns = _normalize_spec_compare_columns(
+            self.left_compare_column.get(),
+            self.right_compare_column.get(),
+        )
+        self.left_compare_column.set(compare_columns[0])
+        self.right_compare_column.set(compare_columns[2])
+        return compare_columns
+
     def _preview_compare(self):
         excel_file = self.excel_path.get().strip()
         folder = self.folder_path.get().strip()
@@ -1288,29 +1530,64 @@ class SpecUploadApp:
         self._log("开始预览比对...")
 
         try:
+            compare_columns = self._get_compare_columns()
+            left_label, left_index, right_label, right_index = compare_columns
             excel_data, sheet_name = self._read_excel_data(excel_file)
+            _validate_spec_compare_columns(excel_data, compare_columns)
+            _validate_spec_status_columns(excel_data)
             self._log(f"读取表格：{os.path.basename(excel_file)} (工作表: {sheet_name})")
             self._log(f"表格共 {len(excel_data)} 行")
+            self._log(
+                f"比对规则：横杠左边 → {left_label}列；"
+                f"横杠右边 → {right_label}列"
+            )
 
             folder_files = self._scan_folder_files(folder)
             self._log(f"扫描文件夹：共 {len(folder_files)} 个文件")
 
             matches = 0
-            for i, row in enumerate(excel_data):
-                if i == 0:
-                    continue
-                s_val = str(row[18]).strip() if len(row) > 18 else ""
-                a_val = str(row[0]).strip() if len(row) > 0 else ""
-                if not s_val and not a_val:
+            duplicate_matches = 0
+            for i, row in enumerate(
+                    excel_data[SPEC_DATA_START_ROW - 1:],
+                    start=SPEC_DATA_START_ROW):
+                left_value = _spec_row_value(row, left_index)
+                right_value = _spec_row_value(row, right_index)
+                if not left_value and not right_value:
                     continue
                 for fi in folder_files:
-                    if (s_val and fi["left"] == s_val) or (a_val and fi["right"] == a_val):
+                    if (
+                        left_value and fi["left"] == left_value
+                    ) or (
+                        right_value and fi["right"] == right_value
+                    ):
                         matches += 1
-                        self._log(f"  匹配：表格第{i+1}行 [S列:{s_val} | A列:{a_val}] ↔ [{fi['filename']}]")
+                        checkbox_value = row[SPEC_CHECKBOX_COLUMN - 1]
+                        upload_status = row[SPEC_UPLOAD_STATUS_COLUMN - 1]
+                        is_duplicate = _spec_status_is_marked(
+                            checkbox_value, upload_status
+                        )
+                        if is_duplicate:
+                            duplicate_matches += 1
+                        self._log(
+                            f"  {'重复' if is_duplicate else '新增'}匹配："
+                            f"表格第{i}行 "
+                            f"[{left_label}列:{left_value} | "
+                            f"{right_label}列:{right_value}] "
+                            f"↔ [{fi['filename']}]"
+                        )
                         break
 
-            self._log(f"预览完成：找到 {matches} 条匹配记录")
-            self.status_text.set(f"预览：共 {len(excel_data)-1} 行数据，{len(folder_files)} 个文件，{matches} 条匹配")
+            new_matches = matches - duplicate_matches
+            self._log(
+                f"预览完成：找到 {matches} 条匹配记录，"
+                f"新增 {new_matches} 条，重复 {duplicate_matches} 条"
+            )
+            data_row_count = max(0, len(excel_data) - SPEC_HEADER_ROWS)
+            self.status_text.set(
+                f"预览：共 {data_row_count} 行数据，"
+                f"{len(folder_files)} 个文件，新增 {new_matches} 条，"
+                f"重复 {duplicate_matches} 条"
+            )
 
         except Exception as e:
             self._log(f"错误：{e}")
@@ -1329,24 +1606,39 @@ class SpecUploadApp:
         if not HAS_OPENPYXL:
             messagebox.showerror("依赖缺失", "缺少 openpyxl 库")
             return
+        try:
+            compare_columns = self._get_compare_columns()
+        except ValueError as error:
+            messagebox.showwarning("比对列无效", str(error))
+            return
 
         self._clear_log()
         self.start_btn.configure(state="disabled")
         self.progress_var.set(0)
         self.is_processing = True
 
-        threading.Thread(target=self._do_compare, daemon=True).start()
+        threading.Thread(
+            target=self._do_compare,
+            args=(excel_file, folder, compare_columns),
+            daemon=True,
+        ).start()
 
-    def _do_compare(self):
+    def _do_compare(self, excel_file, folder, compare_columns):
         try:
-            excel_file = self.excel_path.get().strip()
-            folder = self.folder_path.get().strip()
+            left_label, left_index, right_label, right_index = compare_columns
 
-            self.root.after(0, self._log, "==== 规约上传比对开始 ====")
+            self.root.after(0, self._log, "==== 规约上传数据表准备：比对开始 ====")
             self.root.after(0, self._log, f"源表格：{excel_file}")
             self.root.after(0, self._log, f"目标文件夹：{folder}")
+            self.root.after(
+                0, self._log,
+                f"比对规则：横杠左边 → {left_label}列；"
+                f"横杠右边 → {right_label}列"
+            )
 
             excel_data, sheet_name = self._read_excel_data(excel_file)
+            _validate_spec_compare_columns(excel_data, compare_columns)
+            _validate_spec_status_columns(excel_data)
             self.root.after(0, self._log, f"读取表格：{len(excel_data)} 行，工作表：{sheet_name}")
 
             folder_files = self._scan_folder_files(folder)
@@ -1360,103 +1652,74 @@ class SpecUploadApp:
             self.root.after(0, self._log, "正在识别匹配行...")
 
             row_match_info = {}
-            for i in range(2, len(excel_data) + 1):
+            row_status_info = {}
+            for i in range(SPEC_DATA_START_ROW, len(excel_data) + 1):
                 row_data = excel_data[i - 1] if i - 1 < len(excel_data) else []
-                s_val = str(row_data[18]).strip() if len(row_data) > 18 else ""
-                a_val = str(row_data[0]).strip() if len(row_data) > 0 else ""
+                left_value = _spec_row_value(row_data, left_index)
+                right_value = _spec_row_value(row_data, right_index)
+                checkbox_value = row_data[SPEC_CHECKBOX_COLUMN - 1]
+                upload_status = row_data[SPEC_UPLOAD_STATUS_COLUMN - 1]
                 matched = False
                 for fi in folder_files:
-                    if (s_val and fi["left"] == s_val) or (a_val and fi["right"] == a_val):
+                    if (
+                        left_value and fi["left"] == left_value
+                    ) or (
+                        right_value and fi["right"] == right_value
+                    ):
                         matched = True
                         break
                 row_match_info[i] = matched
+                row_status_info[i] = {
+                    "marked": _spec_status_is_marked(
+                        checkbox_value, upload_status
+                    ),
+                    "checkbox_value": checkbox_value,
+                    "upload_status": upload_status,
+                }
 
             matches = sum(1 for v in row_match_info.values() if v)
-            total_data_rows = len(excel_data) - 1
-            self.root.after(0, self._log,
-                f"匹配完成：{matches} 条待上传，{total_data_rows - matches} 条无需上传")
+            duplicate_matches = sum(
+                1 for row_number, matched in row_match_info.items()
+                if matched and row_status_info[row_number]["marked"]
+            )
+            new_matches = matches - duplicate_matches
+            total_data_rows = max(0, len(excel_data) - SPEC_HEADER_ROWS)
+            self.root.after(
+                0, self._log,
+                f"匹配完成：共 {matches} 条，新增 {new_matches} 条，"
+                f"重复 {duplicate_matches} 条，"
+                f"{total_data_rows - matches} 条本次未匹配"
+            )
 
             wb = openpyxl.load_workbook(output_path)
             ws = wb.active
 
-            for mr in list(ws.merged_cells.ranges):
-                ws.unmerge_cells(str(mr))
-
-            HEADER_ROWS = 4
-            max_orig_col = max((len(r) for r in excel_data), default=26)
-            total_data_rows = len(excel_data) - 1
-
-            row_cell_data = {}
-            for row_num in range(1, len(excel_data) + 1):
-                cells = []
-                for col in range(1, max_orig_col + 1):
-                    try:
-                        cell = ws.cell(row=row_num, column=col)
-                        cells.append({
-                            'value': cell.value,
-                            'font': cell.font,
-                            'fill': cell.fill,
-                            'alignment': cell.alignment,
-                            'border': cell.border,
-                        })
-                    except Exception:
-                        cells.append({
-                            'value': None,
-                            'font': None,
-                            'fill': None,
-                            'alignment': None,
-                            'border': None,
-                        })
-                row_cell_data[row_num] = cells
-
-            matched_orig = [i for i in range(2, len(excel_data) + 1) if row_match_info[i]]
-            unmatched_orig = [i for i in range(2, len(excel_data) + 1) if not row_match_info[i]]
+            max_orig_col = ws.max_column
+            if max_orig_col < SPEC_UPLOAD_STATUS_COLUMN:
+                raise ValueError(
+                    "表格中不存在现有 K/L 状态列，已停止处理且不会新增列"
+                )
+            matched_orig = [
+                i for i in range(SPEC_DATA_START_ROW, len(excel_data) + 1)
+                if row_match_info[i]
+            ]
+            unmatched_orig = [
+                i for i in range(SPEC_DATA_START_ROW, len(excel_data) + 1)
+                if not row_match_info[i]
+            ]
             new_order = matched_orig + unmatched_orig
 
-            data_start_row = HEADER_ROWS + 1
-            data_end_row = HEADER_ROWS + total_data_rows
-
-            for row_num in range(data_start_row, data_end_row + 1):
-                for col in range(1, max_orig_col + 1):
-                    try:
-                        ws.cell(row=row_num, column=col).value = None
-                    except Exception:
-                        pass
-
-            new_matched_rows = []
-            for new_pos, orig_row in enumerate(new_order, start=data_start_row):
-                for col_idx, cell_data in enumerate(row_cell_data[orig_row], start=1):
-                    try:
-                        cell = ws.cell(row=new_pos, column=col_idx)
-                        if cell_data['value'] is not None:
-                            cell.value = cell_data['value']
-                        if cell_data['font'] is not None:
-                            cell.font = cell_data['font']
-                        if cell_data['fill'] is not None:
-                            cell.fill = cell_data['fill']
-                        if cell_data['alignment'] is not None:
-                            cell.alignment = cell_data['alignment']
-                        if cell_data['border'] is not None:
-                            cell.border = cell_data['border']
-                    except Exception:
-                        pass
-                if row_match_info[orig_row]:
-                    new_matched_rows.append(new_pos)
-
+            data_start_row = SPEC_DATA_START_ROW
+            data_end_row = len(excel_data)
+            _reorder_worksheet_rows(
+                ws, new_order, data_start_row, max_orig_col
+            )
             self.root.after(0, self._log,
-                f"重排序完成：前{HEADER_ROWS}行保留，待上传行从第{data_start_row}行开始置顶")
+                f"重排序完成：前{SPEC_HEADER_ROWS}行格式完整保留，"
+                f"待上传行从第{data_start_row}行开始置顶")
 
-            col_insert_after = 10
-            col_checkbox = col_insert_after + 1
-            col_need_upload = col_insert_after + 2
-
-            ws.insert_cols(col_checkbox, amount=2)
-
-            ws.cell(row=1, column=col_checkbox, value="复核")
-            ws.cell(row=1, column=col_need_upload, value="需上传")
-
-            header_font = Font(bold=True, size=10)
-            header_fill = PatternFill(start_color="FFFFE0B2", end_color="FFFFE0B2", fill_type="solid")
+            col_checkbox = SPEC_CHECKBOX_COLUMN
+            col_need_upload = SPEC_UPLOAD_STATUS_COLUMN
             center_align = Alignment(horizontal="center", vertical="center")
             thin_border = Border(
                 left=Side(style="thin", color="FFE0E0E0"),
@@ -1465,29 +1728,45 @@ class SpecUploadApp:
                 bottom=Side(style="thin", color="FFE0E0E0")
             )
 
-            red_bold_font = Font(bold=True, size=10, color="FFFF0000")
-
-            for col_idx in [col_need_upload, col_checkbox]:
-                cell = ws.cell(row=1, column=col_idx)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.alignment = center_align
-                cell.border = thin_border
-
             k_col_letter = get_column_letter(col_checkbox)
             l_col_letter = get_column_letter(col_need_upload)
+            status_rows = []
+            checkbox_values = {}
+            for target_row, source_row in enumerate(
+                    new_order, start=data_start_row):
+                status_info = row_status_info[source_row]
+                check_cell = ws.cell(
+                    row=target_row, column=col_checkbox
+                )
+                need_cell = ws.cell(
+                    row=target_row, column=col_need_upload
+                )
 
-            for row_num in new_matched_rows:
-                need_cell = ws.cell(row=row_num, column=col_need_upload)
-                need_cell.value = f'=IF({k_col_letter}{row_num}=TRUE,"已完成上传","待上传")'
-                need_cell.alignment = center_align
-                need_cell.border = thin_border
+                if (
+                    status_info["marked"]
+                    and _is_spec_status_formula(need_cell.value)
+                ):
+                    need_cell.value = _spec_status_formula(target_row)
 
-                check_cell = ws.cell(row=row_num, column=col_checkbox, value="")
-                check_cell.alignment = center_align
-                check_cell.border = thin_border
+                if row_match_info[source_row]:
+                    if status_info["marked"]:
+                        need_cell.value = SPEC_DUPLICATE_STATUS
+                    else:
+                        check_cell.value = ""
+                        need_cell.value = _spec_status_formula(target_row)
+                        check_cell.alignment = center_align
+                        need_cell.alignment = center_align
+                        if check_cell.border == Border():
+                            check_cell.border = thin_border
+                        if need_cell.border == Border():
+                            need_cell.border = thin_border
 
-            self.progress_var.set(70)
+                if _spec_status_is_marked(
+                        check_cell.value, need_cell.value):
+                    status_rows.append(target_row)
+                    checkbox_values[target_row] = check_cell.value
+
+            self.root.after(0, self.progress_var.set, 70)
             self.root.after(0, self._log, "正在设置列宽和条件格式...")
 
             col_width_need = max(ws.column_dimensions[l_col_letter].width or 0, 12)
@@ -1495,50 +1774,111 @@ class SpecUploadApp:
             ws.column_dimensions[l_col_letter].width = col_width_need
             ws.column_dimensions[k_col_letter].width = col_width_check
 
+            red_bold_font = Font(bold=True, size=10, color="FFFF0000")
             green_text_font = Font(bold=True, size=10, color="FF00B050")
             light_green_fill = PatternFill(start_color="FFEBF1DE", end_color="FFEBF1DE", fill_type="solid")
 
-            max_col = max_orig_col + 2
-            row_range = f"A{data_start_row}:{get_column_letter(max_col)}{data_end_row}"
-            row_fill_rule = FormulaRule(
-                formula=[f"${k_col_letter}{data_start_row}=TRUE"],
-                fill=light_green_fill
-            )
-            ws.conditional_formatting.add(row_range, row_fill_rule)
+            if data_end_row >= data_start_row:
+                # Replace status rules from earlier runs instead of stacking them.
+                for cf in list(ws.conditional_formatting._cf_rules):
+                    rules = ws.conditional_formatting._cf_rules[cf]
+                    remaining_rules = [
+                        rule for rule in rules
+                        if not any(
+                            f"{k_col_letter}{data_start_row}=TRUE" in formula
+                            for formula in (rule.formula or [])
+                        )
+                    ]
+                    if remaining_rules:
+                        ws.conditional_formatting._cf_rules[cf] = (
+                            remaining_rules
+                        )
+                    else:
+                        del ws.conditional_formatting._cf_rules[cf]
 
-            l_cf_range = f"{l_col_letter}{data_start_row}:{l_col_letter}{data_end_row}"
-            red_bold_rule = FormulaRule(
-                formula=[f"NOT({k_col_letter}{data_start_row}=TRUE)"],
-                font=red_bold_font
-            )
-            ws.conditional_formatting.add(l_cf_range, red_bold_rule)
+                max_col = max_orig_col
+                row_range = (
+                    f"A{data_start_row}:"
+                    f"{get_column_letter(max_col)}{data_end_row}"
+                )
+                row_fill_rule = FormulaRule(
+                    formula=[
+                        f'AND(${k_col_letter}{data_start_row}=TRUE,'
+                        f'${l_col_letter}{data_start_row}'
+                        f'<>"{SPEC_DUPLICATE_STATUS}")'
+                    ],
+                    fill=light_green_fill
+                )
+                ws.conditional_formatting.add(row_range, row_fill_rule)
 
-            green_bold_rule = FormulaRule(
-                formula=[f"{k_col_letter}{data_start_row}=TRUE"],
-                font=green_text_font
-            )
-            ws.conditional_formatting.add(l_cf_range, green_bold_rule)
+                l_cf_range = (
+                    f"{l_col_letter}{data_start_row}:"
+                    f"{l_col_letter}{data_end_row}"
+                )
+                red_bold_rule = FormulaRule(
+                    formula=[
+                        f"OR(NOT({k_col_letter}{data_start_row}=TRUE),"
+                        f'{l_col_letter}{data_start_row}'
+                        f'="{SPEC_DUPLICATE_STATUS}")'
+                    ],
+                    font=red_bold_font
+                )
+                ws.conditional_formatting.add(l_cf_range, red_bold_rule)
 
+                green_bold_rule = FormulaRule(
+                    formula=[
+                        f"AND({k_col_letter}{data_start_row}=TRUE,"
+                        f'{l_col_letter}{data_start_row}'
+                        f'<>"{SPEC_DUPLICATE_STATUS}")'
+                    ],
+                    font=green_text_font
+                )
+                ws.conditional_formatting.add(l_cf_range, green_bold_rule)
+
+            _set_worksheet_columns_hidden(
+                ws, col_checkbox, col_need_upload
+            )
             wb.save(output_path)
             wb.close()
 
-            self.progress_var.set(85)
-            self.root.after(0, self._log, "正在插入窗体复选框...")
-            self._insert_form_checkboxes(output_path, new_matched_rows, col_checkbox)
+            self.root.after(0, self.progress_var.set, 85)
+            self.root.after(0, self._log, "正在同步 K 列窗体复选框...")
+            self._sync_form_checkboxes(
+                output_path,
+                status_rows,
+                checkbox_values,
+                col_checkbox,
+                col_need_upload,
+            )
+            if not _workbook_columns_are_hidden(
+                    output_path, col_checkbox, col_need_upload):
+                raise ValueError("生成文件 K/L 列隐藏折叠校验失败")
+            self.root.after(
+                0, self._log, "[校验通过] K/L 列已隐藏折叠"
+            )
 
             self.root.after(0, self.progress_var.set, 100)
             self.root.after(0, self._log, f"==== 比对完成 ====")
-            self.root.after(0, self._log, f"匹配成功：{matches} 条")
+            self.root.after(
+                0, self._log,
+                f"匹配成功：{matches} 条（新增 {new_matches} 条，"
+                f"重复 {duplicate_matches} 条）"
+            )
             self.root.after(0, self._log, f"生成文件：{output_path}")
             self.root.after(0, self._log, f"待上传行已置顶（共 {matches} 条，排在表格顶部）")
 
             self.generated_file = output_path
             self.root.after(0, lambda: self.open_btn.configure(state="normal"))
             self.root.after(0, lambda: self.status_text.set(
-                f"完成！共 {total_data_rows} 行，匹配 {matches} 条（已置顶），已生成：{os.path.basename(output_path)}"))
+                f"完成！新增 {new_matches} 条，重复 "
+                f"{duplicate_matches} 条（已置顶），已生成："
+                f"{os.path.basename(output_path)}"))
 
             self.root.after(0, lambda: messagebox.showinfo("完成",
-                f"比对完成！\n\n匹配：{matches} 条\n已置顶：{matches} 条待上传行\n生成文件：\n{output_path}\n\n请用 WPS 打开编辑"))
+                f"比对完成！\n\n匹配：{matches} 条\n"
+                f"新增：{new_matches} 条\n重复：{duplicate_matches} 条\n"
+                f"已置顶：{matches} 条待上传行\n生成文件：\n"
+                f"{output_path}\n\n请用 WPS 打开编辑"))
 
         except Exception as e:
             import traceback
@@ -1560,18 +1900,21 @@ class SpecUploadApp:
         else:
             messagebox.showwarning("提示", "请先执行比对生成表格")
 
-    def _insert_form_checkboxes(self, file_path, matched_rows, col_checkbox):
-        if not matched_rows:
-            return
-
+    def _sync_form_checkboxes(
+            self, file_path, status_rows, checkbox_values,
+            col_checkbox, col_need_upload):
         try:
             import win32com.client
         except ImportError:
-            self.root.after(0, self._log, "⚠ 缺少 pywin32，跳过复选框插入")
-            return
+            self.root.after(
+                0, self._log,
+                "⚠ 缺少 pywin32，跳过复选框同步"
+            )
+            return False
 
         excel_app = None
         workbook = None
+        operation_error = None
         try:
             prog_ids = ["Excel.Application", "et.Application", "Kwps.Application"]
             last_err = None
@@ -1586,8 +1929,9 @@ class SpecUploadApp:
                     excel_app = None
 
             if excel_app is None:
-                self.root.after(0, self._log, "⚠ 无法启动 WPS/Excel，跳过复选框插入")
-                return
+                raise RuntimeError(
+                    f"无法启动 WPS/Excel：{last_err}"
+                )
 
             excel_app.Visible = False
             excel_app.DisplayAlerts = False
@@ -1596,8 +1940,24 @@ class SpecUploadApp:
             ws = workbook.Worksheets(1)
 
             col_letter = get_column_letter(col_checkbox)
+            status_columns = ws.Columns(
+                f"{get_column_letter(col_checkbox)}:"
+                f"{get_column_letter(col_need_upload)}"
+            )
+            status_columns.Hidden = False
 
-            for row_num in matched_rows:
+            removed_count = 0
+            checkboxes = ws.CheckBoxes()
+            for index in range(checkboxes.Count, 0, -1):
+                checkbox = checkboxes(index)
+                if (
+                    checkbox.TopLeftCell.Column == col_checkbox
+                    and checkbox.TopLeftCell.Row >= SPEC_DATA_START_ROW
+                ):
+                    checkbox.Delete()
+                    removed_count += 1
+
+            for row_num in status_rows:
                 cell_addr = f"{col_letter}{row_num}"
                 cell = ws.Range(cell_addr)
 
@@ -1608,7 +1968,13 @@ class SpecUploadApp:
                     Height=cell.Height - 4
                 )
                 cb.Caption = ""
-                cb.Value = 0
+                original_value = checkbox_values.get(row_num)
+                checked = (
+                    original_value is True
+                    or original_value == 1
+                    or str(original_value).strip().upper() == "TRUE"
+                )
+                cb.Value = 1 if checked else -4146
 
                 try:
                     cb.LinkedCell = cell_addr
@@ -1617,17 +1983,20 @@ class SpecUploadApp:
                         cb.ControlFormat.LinkedCell = cell_addr
                     except Exception:
                         pass
+                cell.Value = (
+                    "" if original_value in (None, "")
+                    else original_value
+                )
+
+            status_columns.Hidden = True
 
             workbook.Save()
-            workbook.Close(SaveChanges=False)
-            excel_app.Quit()
-
-            self.root.after(0, self._log, f"已插入 {len(matched_rows)} 个窗体复选框")
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self.root.after(0, self._log, f"⚠ 复选框插入失败：{e}")
+            operation_error = e
+        finally:
             try:
                 if workbook:
                     workbook.Close(SaveChanges=False)
@@ -1635,6 +2004,25 @@ class SpecUploadApp:
                     excel_app.Quit()
             except Exception:
                 pass
+
+        if operation_error is not None:
+            self.root.after(
+                0, self._log,
+                f"⚠ 复选框同步失败：{operation_error}"
+            )
+            self.root.after(
+                0, self._log,
+                "K/L 列已在生成阶段完成隐藏折叠"
+            )
+            return False
+
+        self.root.after(
+            0, self._log,
+            f"已清理 {removed_count} 个旧控件并重建 "
+            f"{len(status_rows)} 个窗体复选框，"
+            "K/L 列已隐藏并分组折叠"
+        )
+        return True
 
 
 class AIChatApp:
@@ -1652,7 +2040,7 @@ class AIChatApp:
 
     def _init_impl(self, root):
         self.root = root
-        self.root.title("AI 智能助手 v3.5")
+        self.root.title(f"AI 智能助手 v{APP_VERSION}")
         self.root.geometry("860x760")
         self.root.configure(bg=BG_COLOR)
         self.root.resizable(False, False)

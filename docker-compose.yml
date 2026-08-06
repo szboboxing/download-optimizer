@@ -33,7 +33,7 @@ services:
       - TZ=Asia/Shanghai
       - PYTHONUNBUFFERED=1
       - APP_ENV=docker
-      - APP_VERSION=3.5
+      - APP_VERSION=3.11
     healthcheck:
       test: ["CMD", "python", "-c", "import openpyxl, requests; print('OK')"]
       interval: 30s

@@ -7,8 +7,8 @@ FROM python:3.13-slim AS builder
 
 LABEL maintainer="szboboxing" \
       project="download-optimizer" \
-      version="3.5" \
-      description="下载流程优化工具 - 批量重命名与规约上传"
+      version="3.11" \
+      description="下载流程优化工具 - 批量重命名、规约上传数据表准备与 AI 助手"
 
 WORKDIR /build
 
@@ -37,7 +37,7 @@ FROM python:3.13-slim AS runtime
 
 LABEL maintainer="szboboxing" \
       project="download-optimizer" \
-      version="3.5"
+      version="3.11"
 
 WORKDIR /app
 

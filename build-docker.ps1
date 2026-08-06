@@ -28,7 +28,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $ImageName    = 'download-optimizer'
-$ImageTag     = 'v3.5'
+$ImageTag     = 'v3.11'
 $DockerUser   = if ($env:DOCKER_HUB_USER) { $env:DOCKER_HUB_USER } else { 'szboboxing' }
 $FullImage    = "${DockerUser}/${ImageName}:${ImageTag}"
 $LatestImage  = "${DockerUser}/${ImageName}:latest"
@@ -136,7 +136,7 @@ function Invoke-Clean {
 
 function Show-Help {
     Write-Host @"
-下载流程优化工具 v3.5 — Docker 构建脚本
+下载流程优化工具 v3.11 — Docker 构建脚本
 
 用法: .\build-docker.ps1 [-Action <操作>]
 
