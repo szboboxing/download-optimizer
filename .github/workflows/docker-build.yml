@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 设置 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -35,12 +35,16 @@ jobs:
           python -c "import py_compile; py_compile.compile('main.py', doraise=True)"
           python -c "import openpyxl, requests; print('All dependencies OK')"
 
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: 构建 Docker 镜像
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           dockerfile: ./Dockerfile
           push: false
+          load: true
           tags: |
             ${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
@@ -50,12 +54,6 @@ jobs:
         run: |
           docker run --rm ${{ env.IMAGE_NAME }}:latest
 
-      - name: 上传构建缓存
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-build-cache
-          path: /tmp/.dockerx-cache
-
   publish:
     name: 发布到 Docker Hub
     needs: build
@@ -63,7 +61,10 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Docker Hub 登录
         uses: docker/login-action@v3
@@ -78,7 +79,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: 构建并推送镜像
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           dockerfile: ./Dockerfile
@@ -93,26 +94,3 @@ jobs:
           echo "   Docker Hub: https://hub.docker.com/r/${{ secrets.DOCKER_HUB_USER }}/${{ env.IMAGE_NAME }}"
           echo "   标签: ${{ steps.version.outputs.version }}"
           echo "   拉取: docker pull ${{ secrets.DOCKER_HUB_USER }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}"
-
-  github-pages:
-    name: 更新 GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 配置 Pages
-        id: pages
-        uses: actions/configure-pages@v5
-
-      - name: 上传文档
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-
-      - name: 部署 Pages
-        uses: actions/deploy-pages@v4

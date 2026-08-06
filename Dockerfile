@@ -12,6 +12,10 @@ LABEL maintainer="szboboxing" \
 
 WORKDIR /build
 
+ENV VIRTUAL_ENV=/opt/venv
+RUN python -m venv "$VIRTUAL_ENV"
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -37,11 +41,15 @@ LABEL maintainer="szboboxing" \
 
 WORKDIR /app
 
+# 复制隔离的 Python 依赖
+COPY --from=builder /opt/venv /opt/venv
+
 # 从构建阶段复制产物
 COPY --from=builder /build /app
 
 # 设置环境变量
-ENV PYTHONUNBUFFERED=1 \
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     TZ=Asia/Shanghai \
     APP_HOME=/app
