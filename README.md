@@ -62,7 +62,7 @@
 
 ### 方式一：下载 EXE（推荐普通用户）
 
-前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `下载流程优化工具_v3.11.exe`，双击即可运行。
+前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `download-optimizer-v3.11.exe`，双击即可运行。
 
 ### 方式二：源码运行（开发者）
 

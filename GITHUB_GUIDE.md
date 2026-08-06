@@ -211,7 +211,7 @@ Release 是 GitHub 上发布可下载版本的功能。
 
 ### 📥 安装方法
 
-1. 点击下方 **Assets** 区域的 `下载流程优化工具_v3.11.exe`
+1. 点击下方 **Assets** 区域的 `download-optimizer-v3.11.exe`
 2. 保存到本地
 3. 双击运行即可
 
@@ -240,7 +240,7 @@ docker-compose up -d
 
 ### 验证 Release
 
-在仓库 **Releases** 页面，应该能看到刚发布的版本。点击 `下载流程优化工具_v3.11.exe` 即可下载。
+在仓库 **Releases** 页面，应该能看到刚发布的版本。点击 `download-optimizer-v3.11.exe` 即可下载。
 
 ---
 
