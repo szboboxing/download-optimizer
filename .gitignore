@@ -40,6 +40,7 @@ logs/
 # User config
 config.ini
 api_keys.json
+download_optimizer_config.json
 
 # Project specific
 电脑批量改名工具.py
@@ -54,3 +55,6 @@ index.html
 
 # EXE files (published via GitHub Releases)
 *.exe
+
+# 独立子项目（各自有独立 Git 仓库）
+mouse-gesture-actions/

@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-v3.11-green.svg)](https://github.com/szboboxing/download-optimizer/releases)
+[![Version](https://img.shields.io/badge/version-v3.17-green.svg)](https://github.com/szboboxing/download-optimizer/releases)
 
 ---
 
@@ -35,7 +35,10 @@
 - 复制 WPS 表格并打开修改
 - 文件名横杠左边默认比对表格 S 列，横杠右边默认比对表格 A 列
 - 两个比对列均为可编辑选择框，可直接填写 W 等 A 至 XFD 范围内的列
-- 左右任一侧内容匹配即视为匹配，原有生成规则保持不变
+- 对应行判定方式可在页面上二选一，选择自动记住（程序同目录配置文件）：
+  - 规则一（任一侧相符，默认）：横杠左边或右边任一侧与指定列相符，即定位为对应行，不要求两侧一致
+  - 规则二（两侧同时一致）：横杠左右两段内容必须与各自指定列分别完全相等才算对应行，仅单侧相同不算；只比对横杠两边内容，不要求文件名必须含横杠（无横杠文件按整名+空右侧参与）
+- 顶部“帮助(H)”为四级下拉菜单（帮助 → 功能说明 → 功能模块 → 具体条目），含全部四个模块的功能说明与《比对匹配规则说明》独立帮助窗口，实时标注当前生效规则
 - 匹配行置顶到第 5 行开始
 - 直接使用现有 K 列“复核”和 L 列“需上传”，不再插入新列
 - 新匹配行在现有 K/L 中生成复选框和状态公式
@@ -62,7 +65,7 @@
 
 ### 方式一：下载 EXE（推荐普通用户）
 
-前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `download-optimizer-v3.11.exe`，双击即可运行。
+前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `download-optimizer-v3.17.exe`，双击即可运行。
 
 ### 方式二：源码运行（开发者）
 
@@ -108,7 +111,7 @@ download-optimizer/
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --name "下载流程优化工具_v3.11" ^
+pyinstaller --onefile --name "下载流程优化工具_v3.17" ^
     --hidden-import win32com --hidden-import win32com.client ^
     --hidden-import pythoncom --hidden-import pywintypes ^
     --noconsole main.py
@@ -117,6 +120,13 @@ pyinstaller --onefile --name "下载流程优化工具_v3.11" ^
 ---
 
 ## 更新日志
+
+### v3.17 (2026-09-22)
+- 🔀 规则二调整：只比对横杠两边的内容，不再要求文件名必须含横杠（无横杠文件按“整名+空右侧”参与）
+- 🆘 “帮助(H)”升级为四级下拉菜单：帮助 → 功能说明 → 功能模块 → 具体说明条目
+- 📖 四个功能模块（文件夹重命名/文件重命名/规约上传/AI 助手）均提供功能简介与操作说明
+- 🛡 规约模块子菜单内含“比对判定规则”，可直接打开两种判定方式的详细说明窗口
+- 📦 构建 Windows 单文件 EXE
 
 ### v3.11 (2026-08-07)
 - 🧱 规约上传直接复用现有 K/L 状态列，不再重复增列
