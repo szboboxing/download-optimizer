@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-v3.17-green.svg)](https://github.com/szboboxing/download-optimizer/releases)
+[![Version](https://img.shields.io/badge/version-v3.18-green.svg)](https://github.com/szboboxing/download-optimizer/releases)
 
 ---
 
@@ -38,7 +38,7 @@
 - 对应行判定方式可在页面上二选一，选择自动记住（程序同目录配置文件）：
   - 规则一（任一侧相符，默认）：横杠左边或右边任一侧与指定列相符，即定位为对应行，不要求两侧一致
   - 规则二（两侧同时一致）：横杠左右两段内容必须与各自指定列分别完全相等才算对应行，仅单侧相同不算；只比对横杠两边内容，不要求文件名必须含横杠（无横杠文件按整名+空右侧参与）
-- 顶部“帮助(H)”为四级下拉菜单（帮助 → 功能说明 → 功能模块 → 具体条目），含全部四个模块的功能说明与《比对匹配规则说明》独立帮助窗口，实时标注当前生效规则
+- 顶部“帮助(H)”为四级下拉菜单（帮助 → 功能说明 → 功能模块 → 具体条目），条目在统一的“帮助中心”窗口打开；窗口按 首页 → 模块 → 说明 三级浏览，底部提供“首页 / 返回上级 / 上一页 / 下一页”导航按钮（上一页/下一页可跨模块逐页翻阅），并实时标注当前生效的比对规则
 - 匹配行置顶到第 5 行开始
 - 直接使用现有 K 列“复核”和 L 列“需上传”，不再插入新列
 - 新匹配行在现有 K/L 中生成复选框和状态公式
@@ -65,7 +65,7 @@
 
 ### 方式一：下载 EXE（推荐普通用户）
 
-前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `download-optimizer-v3.17.exe`，双击即可运行。
+前往 [GitHub Releases](https://github.com/szboboxing/download-optimizer/releases) 下载 `download-optimizer-v3.18.exe`，双击即可运行。
 
 ### 方式二：源码运行（开发者）
 
@@ -111,7 +111,7 @@ download-optimizer/
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --name "下载流程优化工具_v3.17" ^
+pyinstaller --onefile --name "下载流程优化工具_v3.18" ^
     --hidden-import win32com --hidden-import win32com.client ^
     --hidden-import pythoncom --hidden-import pywintypes ^
     --noconsole main.py
@@ -120,6 +120,12 @@ pyinstaller --onefile --name "下载流程优化工具_v3.17" ^
 ---
 
 ## 更新日志
+
+### v3.18 (2026-09-25)
+- 🧭 帮助说明改为统一的“帮助中心”浏览窗口：首页（模块列表）→ 模块页（条目列表）→ 说明页（正文）三级结构
+- 🧭 窗口底部新增“首页 / 返回上级 / 上一页 / 下一页”导航按钮，上一页/下一页按模块顺序跨模块逐页翻阅，边界自动禁用
+- 📍 窗口顶部显示“首页 / 模块 / 条目”面包屑；“比对判定规则”并入规约模块说明页，仍实时标注当前生效规则
+- 🪟 同一功能窗口只保留一个帮助窗口，菜单再次点击直接跳转并置顶，避免弹出多个说明窗
 
 ### v3.17 (2026-09-22)
 - 🔀 规则二调整：只比对横杠两边的内容，不再要求文件名必须含横杠（无横杠文件按“整名+空右侧”参与）

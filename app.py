@@ -1,4 +1,4 @@
-﻿﻿import os
+﻿import os
 import sys
 import json
 import base64
@@ -31,7 +31,7 @@ TEXT_PRIMARY = "#212121"
 TEXT_SECONDARY = "#666666"
 TEXT_MUTED = "#9E9E9E"
 BORDER = "#E0E0E0"
-APP_VERSION = "3.17"
+APP_VERSION = "3.18"
 
 SPEC_HEADER_ROWS = 4
 SPEC_DATA_START_ROW = SPEC_HEADER_ROWS + 1
@@ -349,134 +349,320 @@ AI_PROVIDERS = {
 }
 
 
-def _show_rules_help_dialog(parent, match_mode=None):
-    """“比对匹配规则说明”独立帮助小窗口。"""
-    if match_mode is None:
-        match_mode = _load_app_config().get(
-            "spec_match_mode", SPEC_MATCH_MODE_DEFAULT
-        )
-    match_both = _spec_is_both_mode(match_mode)
+class HelpBrowser(tk.Toplevel):
+    """帮助中心浏览窗口。
 
-    win = tk.Toplevel(parent)
-    win.title("帮助 · 比对匹配规则说明")
-    win.configure(bg=BG_COLOR)
-    win.geometry("640x470")
-    win.resizable(False, False)
-    win.transient(parent)
+    三级页面：首页（模块列表）→ 模块页（说明条目列表）→ 说明页（正文）。
+    底部导航：首页 / 返回上级 / 上一页 / 下一页。
+    path 为 []、[module_key] 或 [module_key, item_index]。
+    """
 
-    outer = tk.Frame(win, bg=BG_COLOR)
-    outer.pack(fill="both", expand=True, padx=20, pady=16)
+    def __init__(self, parent, get_match_mode, module_key=None, item_index=None):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.get_match_mode = get_match_mode
 
-    tk.Label(
-        outer, text="比对匹配规则说明",
-        font=("Microsoft YaHei", 15, "bold"),
-        fg="#FF9800", bg=BG_COLOR,
-    ).pack(anchor="w")
-    tk.Label(
-        outer, text="（规约上传数据表准备功能）",
-        font=("Microsoft YaHei", 9),
-        fg=TEXT_MUTED, bg=BG_COLOR,
-    ).pack(anchor="w", pady=(0, 10))
+        # 全部说明页展平后的顺序，供“上一页/下一页”线性翻页
+        self.leaf_order = [
+            (mkey, i)
+            for mkey, module in HELP_TOPICS.items()
+            for i in range(len(module["items"]))
+        ]
 
-    box = tk.Frame(
-        outer, bg=CARD_COLOR,
-        highlightbackground=BORDER, highlightthickness=1,
-    )
-    box.pack(fill="both", expand=True)
-    inner = tk.Frame(box, bg=CARD_COLOR)
-    inner.pack(fill="both", expand=True, padx=16, pady=12)
+        if module_key is not None and item_index is not None:
+            self.path = [module_key, item_index]
+        elif module_key is not None:
+            self.path = [module_key]
+        else:
+            self.path = []
 
-    heading_font = ("Microsoft YaHei", 10, "bold")
-    body_font = ("Microsoft YaHei", 9)
+        self.title("帮助 · 首页")
+        self.configure(bg=BG_COLOR)
+        self.geometry("640x520")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    tk.Label(
-        inner, text="一、怎么判定对应行",
-        font=heading_font, fg=TEXT_PRIMARY, bg=CARD_COLOR,
-    ).pack(anchor="w")
-    tk.Label(
-        inner, text=f"✅ 当前使用：{_spec_rule_name(match_both)}",
-        font=("Microsoft YaHei", 9, "bold"),
-        fg=SUCCESS, bg=CARD_COLOR,
-    ).pack(anchor="w", pady=(2, 8))
-    tk.Label(
-        inner,
-        text="规则一（任一侧相符）：逐行读取表格（第5行起），取两个指定列的值"
-             "（默认横杠左边比 S 列、横杠右边比 A 列）；文件夹中的文件名按横杠"
-             "拆成左右两段，只要左边与 S 列相等、或右边与 A 列相等，任一侧对得上"
-             "就算找到了这行对应的文件，不要求两侧一致；两列都空的行跳过。",
-        font=body_font, fg=TEXT_SECONDARY, bg=CARD_COLOR,
-        wraplength=560, justify="left", anchor="w",
-    ).pack(anchor="w", pady=(0, 6))
-    tk.Label(
-        inner,
-        text="规则二（两侧同时一致）：横杠左边与左指定列一致、横杠右边与右指定列"
-             "也一致，两侧内容分别完全相等才算找到对应行，仅单侧相同不算。"
-             "只比对横杠两边的内容，不要求文件名必须含横杠——无横杠的文件按"
-             "“整名 + 空右侧”参与比对（表格对应列也为空时该侧视为相等）。",
-        font=body_font, fg=TEXT_SECONDARY, bg=CARD_COLOR,
-        wraplength=560, justify="left", anchor="w",
-    ).pack(anchor="w")
+        outer = tk.Frame(self, bg=BG_COLOR)
+        outer.pack(fill="both", expand=True, padx=20, pady=16)
 
-    tk.Label(
-        inner, text="二、找到对应行后怎么处理",
-        font=heading_font, fg=TEXT_PRIMARY, bg=CARD_COLOR,
-    ).pack(anchor="w", pady=(12, 4))
-    tk.Label(
-        inner,
-        text="找到的行置顶到第 5 行起：新行在 K 列生成复选框、L 列写状态公式；"
-             "已有 K/L 标注的行保留 K 列原值，L 列标为“待上传（重复）”。"
-             "找不到对应文件的行留在原位，K/L 不做任何改动，只计入“未匹配”条数。",
-        font=body_font, fg=TEXT_SECONDARY, bg=CARD_COLOR,
-        wraplength=560, justify="left", anchor="w",
-    ).pack(anchor="w")
-
-    ttk.Button(
-        outer, text="关闭", style="Accent.TButton", command=win.destroy,
-    ).pack(pady=(12, 0))
-
-
-def _show_help_topic(parent, title, sections):
-    """通用功能说明小窗口：sections 为 [(小标题, 正文), ...]。"""
-    win = tk.Toplevel(parent)
-    win.title(f"帮助 · {title}")
-    win.configure(bg=BG_COLOR)
-    win.geometry("600x440")
-    win.resizable(False, False)
-    win.transient(parent)
-
-    outer = tk.Frame(win, bg=BG_COLOR)
-    outer.pack(fill="both", expand=True, padx=20, pady=16)
-
-    tk.Label(
-        outer, text=title,
-        font=("Microsoft YaHei", 15, "bold"),
-        fg=ACCENT, bg=BG_COLOR,
-    ).pack(anchor="w", pady=(0, 10))
-
-    box = tk.Frame(
-        outer, bg=CARD_COLOR,
-        highlightbackground=BORDER, highlightthickness=1,
-    )
-    box.pack(fill="both", expand=True)
-    inner = tk.Frame(box, bg=CARD_COLOR)
-    inner.pack(fill="both", expand=True, padx=16, pady=12)
-
-    for index, (heading, body) in enumerate(sections):
+        self.crumb_var = tk.StringVar()
         tk.Label(
-            inner, text=heading,
+            outer, textvariable=self.crumb_var,
+            font=("Microsoft YaHei", 9),
+            fg=TEXT_MUTED, bg=BG_COLOR,
+        ).pack(anchor="w")
+        self.title_var = tk.StringVar()
+        tk.Label(
+            outer, textvariable=self.title_var,
+            font=("Microsoft YaHei", 15, "bold"),
+            fg=ACCENT, bg=BG_COLOR,
+        ).pack(anchor="w", pady=(2, 10))
+
+        self.box = tk.Frame(
+            outer, bg=CARD_COLOR,
+            highlightbackground=BORDER, highlightthickness=1,
+        )
+        self.box.pack(fill="both", expand=True)
+
+        nav = tk.Frame(outer, bg=BG_COLOR)
+        nav.pack(fill="x", pady=(12, 0))
+        self.btn_home = ttk.Button(nav, text="首页", command=self.go_home)
+        self.btn_up = ttk.Button(nav, text="返回上级", command=self.go_up)
+        self.btn_prev = ttk.Button(nav, text="◀ 上一页", command=self.go_prev)
+        self.btn_next = ttk.Button(nav, text="下一页 ▶", command=self.go_next)
+        self.btn_home.pack(side="left")
+        self.btn_up.pack(side="left", padx=(8, 0))
+        self.btn_prev.pack(side="left", padx=(8, 0))
+        self.btn_next.pack(side="left", padx=(8, 0))
+        ttk.Button(
+            nav, text="关闭", style="Accent.TButton", command=self._on_close,
+        ).pack(side="right")
+
+        self._render()
+
+    # ---------- 导航动作 ----------
+
+    def navigate(self, module_key=None, item_index=None):
+        """从菜单等外部入口跳转到指定页，并把窗口提到最前。"""
+        if module_key is not None and item_index is not None:
+            self.path = [module_key, item_index]
+        elif module_key is not None:
+            self.path = [module_key]
+        else:
+            self.path = []
+        self._render()
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def go_home(self):
+        self.path = []
+        self._render()
+
+    def go_up(self):
+        if len(self.path) >= 2:
+            self.path = self.path[:1]
+        elif len(self.path) == 1:
+            self.path = []
+        self._render()
+
+    def _neighbor_index(self, delta):
+        """返回上一页/下一页目标在 leaf_order 中的下标，不可达返回 None。"""
+        if len(self.path) == 2:
+            cur = self.leaf_order.index((self.path[0], self.path[1]))
+            target = cur + delta
+        elif len(self.path) == 1:
+            start = next(
+                i for i, (mkey, _idx) in enumerate(self.leaf_order)
+                if mkey == self.path[0]
+            )
+            target = start - 1 if delta < 0 else start
+        else:
+            target = 0 if delta > 0 else -1
+        if 0 <= target < len(self.leaf_order):
+            return target
+        return None
+
+    def go_prev(self):
+        idx = self._neighbor_index(-1)
+        if idx is not None:
+            mkey, item_index = self.leaf_order[idx]
+            self.path = [mkey, item_index]
+            self._render()
+
+    def go_next(self):
+        idx = self._neighbor_index(1)
+        if idx is not None:
+            mkey, item_index = self.leaf_order[idx]
+            self.path = [mkey, item_index]
+            self._render()
+
+    def _on_close(self):
+        if getattr(self.parent_window, "_help_browser", None) is self:
+            self.parent_window._help_browser = None
+        self.destroy()
+
+    # ---------- 页面渲染 ----------
+
+    def _render(self):
+        for child in self.box.winfo_children():
+            child.destroy()
+        inner = tk.Frame(self.box, bg=CARD_COLOR)
+        inner.pack(fill="both", expand=True, padx=16, pady=12)
+
+        if not self.path:
+            self._render_home(inner)
+        elif len(self.path) == 1:
+            self._render_module(inner, self.path[0])
+        else:
+            self._render_leaf(inner, self.path[0], self.path[1])
+
+        self.btn_home.configure(
+            state=("disabled" if not self.path else "normal")
+        )
+        self.btn_up.configure(
+            state=("disabled" if not self.path else "normal")
+        )
+        self.btn_prev.configure(
+            state=("normal" if self._neighbor_index(-1) is not None
+                   else "disabled")
+        )
+        self.btn_next.configure(
+            state=("normal" if self._neighbor_index(1) is not None
+                   else "disabled")
+        )
+
+    def _index_button(self, parent, text, command):
+        btn = ttk.Button(parent, text=text, command=command)
+        btn.pack(fill="x", pady=3)
+        return btn
+
+    def _render_home(self, inner):
+        self.crumb_var.set("首页")
+        self.title_var.set("帮助中心")
+        self.title("帮助 · 首页")
+        tk.Label(
+            inner, text="请选择要查看的功能模块：",
             font=("Microsoft YaHei", 10, "bold"),
             fg=TEXT_PRIMARY, bg=CARD_COLOR,
-        ).pack(anchor="w", pady=(0 if index == 0 else 10, 2))
+        ).pack(anchor="w", pady=(0, 6))
+        for mkey, module in HELP_TOPICS.items():
+            self._index_button(
+                inner, module["label"],
+                lambda k=mkey: self._open_module(k),
+            )
         tk.Label(
-            inner, text=body,
+            inner, text="常用直达：",
+            font=("Microsoft YaHei", 10, "bold"),
+            fg=TEXT_PRIMARY, bg=CARD_COLOR,
+        ).pack(anchor="w", pady=(12, 2))
+        rules_index = _spec_rules_item_index()
+        self._index_button(
+            inner, "比对匹配规则说明（规约上传）",
+            lambda: self.navigate("spec_upload", rules_index),
+        )
+
+    def _open_module(self, module_key):
+        self.path = [module_key]
+        self._render()
+
+    def _render_module(self, inner, module_key):
+        module = HELP_TOPICS[module_key]
+        label = module["label"]
+        self.crumb_var.set(f"首页 / {label}")
+        self.title_var.set(label)
+        self.title(f"帮助 · {label}")
+        tk.Label(
+            inner, text="请选择要查看的说明：",
+            font=("Microsoft YaHei", 10, "bold"),
+            fg=TEXT_PRIMARY, bg=CARD_COLOR,
+        ).pack(anchor="w", pady=(0, 6))
+        for item_index, item in enumerate(module["items"]):
+            self._index_button(
+                inner, item["label"],
+                lambda k=module_key, i=item_index: self.navigate(k, i),
+            )
+
+    def _render_leaf(self, inner, module_key, item_index):
+        module = HELP_TOPICS[module_key]
+        item = module["items"][item_index]
+        label = module["label"]
+        item_label = item["label"]
+        self.crumb_var.set(f"首页 / {label} / {item_label}")
+        self.title_var.set(item_label)
+        self.title(f"帮助 · {label} · {item_label}")
+
+        if item.get("custom") == "rules":
+            self._render_rules(inner)
+            return
+
+        for index, (heading, body) in enumerate(item["sections"]):
+            tk.Label(
+                inner, text=heading,
+                font=("Microsoft YaHei", 10, "bold"),
+                fg=TEXT_PRIMARY, bg=CARD_COLOR,
+            ).pack(anchor="w", pady=(0 if index == 0 else 10, 2))
+            tk.Label(
+                inner, text=body,
+                font=("Microsoft YaHei", 9),
+                fg=TEXT_SECONDARY, bg=CARD_COLOR,
+                wraplength=556, justify="left", anchor="w",
+            ).pack(anchor="w")
+
+    def _render_rules(self, inner):
+        match_mode = self.get_match_mode()
+        match_both = _spec_is_both_mode(match_mode)
+        heading_font = ("Microsoft YaHei", 10, "bold")
+        body_font = ("Microsoft YaHei", 9)
+
+        tk.Label(
+            inner, text="（规约上传数据表准备功能）",
             font=("Microsoft YaHei", 9),
-            fg=TEXT_SECONDARY, bg=CARD_COLOR,
-            wraplength=520, justify="left", anchor="w",
+            fg=TEXT_MUTED, bg=CARD_COLOR,
+        ).pack(anchor="w", pady=(0, 8))
+        tk.Label(
+            inner, text="一、怎么判定对应行",
+            font=heading_font, fg=TEXT_PRIMARY, bg=CARD_COLOR,
+        ).pack(anchor="w")
+        tk.Label(
+            inner, text=f"✅ 当前使用：{_spec_rule_name(match_both)}",
+            font=("Microsoft YaHei", 9, "bold"),
+            fg=SUCCESS, bg=CARD_COLOR,
+        ).pack(anchor="w", pady=(2, 8))
+        tk.Label(
+            inner,
+            text="规则一（任一侧相符）：逐行读取表格（第5行起），取两个指定列的值"
+                 "（默认横杠左边比 S 列、横杠右边比 A 列）；文件夹中的文件名按横杠"
+                 "拆成左右两段，只要左边与 S 列相等、或右边与 A 列相等，任一侧对得上"
+                 "就算找到了这行对应的文件，不要求两侧一致；两列都空的行跳过。",
+            font=body_font, fg=TEXT_SECONDARY, bg=CARD_COLOR,
+            wraplength=556, justify="left", anchor="w",
+        ).pack(anchor="w", pady=(0, 6))
+        tk.Label(
+            inner,
+            text="规则二（两侧同时一致）：横杠左边与左指定列一致、横杠右边与右指定列"
+                 "也一致，两侧内容分别完全相等才算找到对应行，仅单侧相同不算。"
+                 "只比对横杠两边的内容，不要求文件名必须含横杠——无横杠的文件按"
+                 "“整名 + 空右侧”参与比对（表格对应列也为空时该侧视为相等）。",
+            font=body_font, fg=TEXT_SECONDARY, bg=CARD_COLOR,
+            wraplength=556, justify="left", anchor="w",
+        ).pack(anchor="w")
+        tk.Label(
+            inner, text="二、找到对应行后怎么处理",
+            font=heading_font, fg=TEXT_PRIMARY, bg=CARD_COLOR,
+        ).pack(anchor="w", pady=(12, 4))
+        tk.Label(
+            inner,
+            text="找到的行置顶到第 5 行起：新行在 K 列生成复选框、L 列写状态公式；"
+                 "已有 K/L 标注的行保留 K 列原值，L 列标为“待上传（重复）”。"
+                 "找不到对应文件的行留在原位，K/L 不做任何改动，只计入“未匹配”条数。",
+            font=body_font, fg=TEXT_SECONDARY, bg=CARD_COLOR,
+            wraplength=556, justify="left", anchor="w",
         ).pack(anchor="w")
 
-    ttk.Button(
-        outer, text="关闭", style="Accent.TButton", command=win.destroy,
-    ).pack(pady=(12, 0))
+
+def _spec_rules_item_index():
+    """规约模块中“比对判定规则”说明页的下标。"""
+    return next(
+        i for i, item in enumerate(HELP_TOPICS["spec_upload"]["items"])
+        if item.get("custom") == "rules"
+    )
+
+
+def _open_help_browser(window, get_match_mode, module_key=None, item_index=None):
+    """打开（或复用）该窗口唯一的帮助中心，并跳到指定页。"""
+    existing = getattr(window, "_help_browser", None)
+    if existing is not None:
+        try:
+            if existing.winfo_exists():
+                existing.navigate(module_key, item_index)
+                return existing
+        except tk.TclError:
+            pass
+    browser = HelpBrowser(window, get_match_mode, module_key, item_index)
+    window._help_browser = browser
+    return browser
 
 
 # 各功能模块帮助主题（第 4 级菜单条目），内容均取自程序实际功能
@@ -484,81 +670,82 @@ HELP_TOPICS = {
     "folder_rename": {
         "label": "📁 批量重命名文件夹",
         "items": [
-            ("功能简介", [
+            {"label": "功能简介", "sections": [
                 ("用途",
                  "对选定文件夹下的子文件夹批量改名，支持三种改名模式；"
                  "执行前可先预览新旧名称对照，执行后可一键回退。"),
-            ]),
-            ("重命名规则", [
+            ]},
+            {"label": "重命名规则", "sections": [
                 ("三种模式",
                  "① 删除前N位字符：去掉文件夹名开头 1-8 位（可选）；"
                  "② 后加内容：在原名后面追加指定文字（默认“-重复送审项目”）；"
                  "③ 前加内容：在原名前面加指定文字（默认当天日期，如 20260922_）。"),
-            ]),
-            ("预览与回退", [
+            ]},
+            {"label": "预览与回退", "sections": [
                 ("安全操作",
                  "先点“预览”查看改名对照，确认无误再点“开始批量重命名”；"
                  "“后悔，回退”可撤销最近一次批量操作，目标名称已被占用的会跳过并计入失败。"),
-            ]),
+            ]},
         ],
     },
     "file_rename": {
         "label": "📄 批量重命名文件",
         "items": [
-            ("功能简介", [
+            {"label": "功能简介", "sections": [
                 ("用途",
                  "对选定文件夹内的文件批量改名，可统一添加日期、版本号或自定义字符，"
                  "支持预览与一键回退。"),
-            ]),
-            ("重命名规则", [
+            ]},
+            {"label": "重命名规则", "sections": [
                 ("三种操作类型",
                  "① 添加当前日期（默认格式 20260922）；"
                  "② 添加版本号（默认 v1.0，可自行修改）；"
                  "③ 添加指定字符（输入任意自定义文字）。"),
-            ]),
-            ("添加位置与回退", [
+            ]},
+            {"label": "添加位置与回退", "sections": [
                 ("位置与撤销",
                  "添加内容可选择加在“文件名前”或“文件名后”；先预览再执行，"
                  "“后悔，回退”撤销最近一次批量操作。"),
-            ]),
+            ]},
         ],
     },
     "spec_upload": {
         "label": "🛡 规约上传数据表准备",
         "items": [
-            ("功能简介", [
+            {"label": "功能简介", "sections": [
                 ("用途",
                  "复制一份 WPS 表格，用文件名横杠左边/右边与表格两个指定列"
                  "（默认 S/A，可手填 A-XFD）比对，把匹配行置顶，并写好 K 列"
                  "“复核”复选框与 L 列“需上传”状态；K/L 列自动隐藏，原表不改动。"),
-            ]),
-            ("生成结果说明", [
+            ]},
+            {"label": "比对判定规则", "custom": "rules"},
+            {"label": "生成结果说明", "sections": [
                 ("输出与处理",
                  "生成“原文件名+上传.xlsx”新文件，匹配行从第 5 行开始置顶；"
                  "新行 K 列为复选框、L 列写状态公式，已标注行保留 K 值并标“待上传（重复）”；"
                  "未匹配行留在原位、K/L 原样保留；建议用 WPS 打开编辑。"),
-            ]),
+            ]},
         ],
     },
     "ai_chat": {
         "label": "🤖 AI 智能助手",
         "items": [
-            ("功能简介", [
+            {"label": "功能简介", "sections": [
                 ("用途",
                  "对话式 AI 助手，可在多个大模型平台间切换，联网调用官方接口，"
                  "需自行准备 API Key。"),
-            ]),
-            ("接口与模型配置", [
+            ]},
+            {"label": "接口与模型配置", "sections": [
                 ("配置项",
                  "接口可选：硅基流动、DeepSeek、火山引擎（豆包）、百度千帆（元宝）；"
                  "选择平台后再选模型；温度滑块 0.3-1.0，数值越高回答越发散；"
                  "API Key 保存在本机，可显示/隐藏。"),
-            ]),
-            ("对话与保存", [
+            ]},
+            {"label": "对话与保存", "sections": [
                 ("操作",
                  "在输入框输入问题，点“发送”或按 Ctrl+Enter；"
                  "可“清空对话”重新开始，也可把整段对话“保存”为文本文件。"),
-            ]),
+            ]},
         ],
     },
 }
@@ -578,33 +765,30 @@ def _attach_help_menu(window, get_match_mode=None):
     # 第 2 级：功能说明
     modules_menu = tk.Menu(menubar, tearoff=0)
 
-    # 第 3 级：各功能模块；第 4 级：具体说明条目
-    module_menus = {}
+    # 第 3 级：各功能模块；第 4 级：具体说明条目（在帮助中心窗口打开）
     for module_key, module in HELP_TOPICS.items():
         module_menu = tk.Menu(modules_menu, tearoff=0)
-        module_menus[module_key] = module_menu
-        for item_label, sections in module["items"]:
+        for item_index, item in enumerate(module["items"]):
             module_menu.add_command(
-                label=item_label,
+                label=item["label"],
                 command=(
-                    (lambda m=module, t=item_label, s=sections:
-                     _show_help_topic(window, f"{m['label']} · {t}", s))
+                    lambda mk=module_key, ii=item_index:
+                    _open_help_browser(window, current_mode, mk, ii)
                 ),
             )
         modules_menu.add_cascade(label=module["label"], menu=module_menu)
-
-    # 规约模块额外提供“比对判定规则”详细窗口（插在功能简介之后）
-    module_menus["spec_upload"].insert_command(
-        1,
-        label="比对判定规则",
-        command=lambda: _show_rules_help_dialog(window, current_mode()),
-    )
 
     help_menu = tk.Menu(menubar, tearoff=0)
     help_menu.add_cascade(label="功能说明", menu=modules_menu)
     help_menu.add_command(
         label="比对匹配规则说明",
-        command=lambda: _show_rules_help_dialog(window, current_mode()),
+        command=lambda: _open_help_browser(
+            window, current_mode, "spec_upload", _spec_rules_item_index()
+        ),
+    )
+    help_menu.add_command(
+        label="帮助中心首页",
+        command=lambda: _open_help_browser(window, current_mode),
     )
     help_menu.add_separator()
     help_menu.add_command(
