@@ -1,6 +1,7 @@
 # 产品需求文档（PRD）
 
-> 适用于 AI Code 工具迁移重建。两个独立项目，均为 Windows 桌面 GUI 应用。
+> 适用于 AI Code 工具迁移重建。包含三个独立资产：两个 Windows 桌面 GUI 应用（项目一、项目二，代码不共享）+ 一个纯静态个人作品集网站（项目三，8 个 HTML 页面）。
+> **维护规则：本文档视为最新版的权威需求基线，任一资产迭代发版后必须同步更新对应章节（版本号、功能、版本历史）。**
 
 ---
 
@@ -12,7 +13,7 @@
 |------|------|
 | 项目名称 | 鼠标手势动作小工具 |
 | 仓库地址 | https://github.com/szboboxing/mouse-gesture-actions |
-| 当前版本 | V2.2 |
+| 当前版本 | V2.4 |
 | 开发语言 | Python 3.11+ |
 | GUI 框架 | Tkinter / ttk |
 | 运行平台 | Windows 10 / Windows 11 |
@@ -123,9 +124,21 @@
 | 自定义按钮 | 两个按钮均可右键编辑名称和打开目标（名称限 12 字符） |
 | 随机鼓励语 | 启动时随机显示，也可单击"换一句" |
 | 统计清零 | 清除本次运行的统计数据 |
+| 帮助说明 | 左侧导航第三个入口"❓ 帮助说明"，打开帮助中心浏览窗口（V2.4 新增） |
 | GitHub 项目信息 | 左侧栏目底部显示项目名称和可点击的公开仓库地址，单击使用默认浏览器打开 |
 
-#### 2.7 已移除功能
+#### 2.7 帮助中心浏览窗口（V2.4 新增）
+
+左侧功能导航在"功能首页 / 鼠标按键测试"下方提供"❓ 帮助说明"入口，单击打开统一的帮助中心窗口（非模态，打开期间全局鼠标监听继续运行）。
+
+- **三级浏览结构**：帮助中心首页（功能模块列表）→ 模块页（说明条目列表）→ 说明页（正文）。
+- **覆盖五个模块**：右键组合手势、自定义键盘映射、鼠标按键测试、界面工具、窗口与权限。帮助文案全部取自程序实际功能（判定规则、输入优先级、增强粘贴限制、侧键重新确认步骤、设置文件位置、关闭保护、权限限制等）。
+- **底部四个导航按钮**：`🏠 首页`（任意页回到模块总览）、`⬆ 返回上级`（说明页→模块列表→首页）、`◀ 上一页 / 下一页 ▶`（按模块顺序逐页翻阅、可跨模块，第一张与最后一张自动禁用）。
+- **面包屑**：窗口顶部显示"首页 / 模块 / 条目"当前位置。
+- **单例复用**：同一主窗口只保留一个帮助窗口；再次单击入口跳回首页并置顶；帮助窗口关闭后可重新打开。
+- 实现为独立模块 `help_browser.py`：`HELP_TOPICS` 数据字典（模块 key → 模块名 + 条目列表，条目为小标题/正文分段）驱动全部页面；工厂函数 `open_help_browser(window, module_key=None, item_index=None)` 负责创建或复用主窗口上的 `_help_browser` 单例。
+
+#### 2.8 已移除功能
 
 当前版本不再使用轨迹绘制，以下功能已移除：
 - 逆时针、顺时针圆圈识别。
@@ -144,6 +157,7 @@
 mouse-gesture-actions/
 ├── main.py                     # 启动入口
 ├── app.py                      # 主程序（GUI + 业务逻辑）
+├── help_browser.py             # 帮助中心浏览窗口（V2.4 新增）
 ├── actions.py                  # 系统动作（复制/粘贴/截图/快捷键/打开目标）
 ├── mouse_hook.py               # Windows 低级鼠标钩子（WH_MOUSE_LL）
 ├── display_controls.py         # 屏幕亮度/对比度控制（WMI + DDC/CI）
@@ -157,7 +171,8 @@ mouse-gesture-actions/
 ├── .github/workflows/
 │   ├── ci.yml                  # Windows CI（push/PR 触发）
 │   └── release.yml             # 自动发布（V*.* 标签触发）
-├── tests/                      # 72 项自动化测试
+├── tests/                      # 84 项自动化测试
+│   ├── test_help_browser.py    # 帮助中心导航/单例测试（V2.4 新增 11 项）
 │   ├── test_actions.py
 │   ├── test_right_hold_gestures.py
 │   ├── test_keyboard_mapping_actions.py
@@ -179,6 +194,7 @@ mouse-gesture-actions/
 | 文件 | 类 | 职责 |
 |------|-----|------|
 | `app.py` | `MouseGestureApp` | 主窗口 GUI、事件调度、UI 状态管理 |
+| `help_browser.py` | `HelpBrowser` | 帮助中心窗口：三级页面导航、面包屑、线性翻页、单例复用 |
 | `actions.py` | `ActionResult` | 动作执行结果（success/message/detail） |
 | `actions.py` | `SystemActions` | 复制、截图、自定义快捷键、增强粘贴、打开目标、亮度/对比度调节 |
 | `mouse_hook.py` | `GlobalRightButtonActionHook` | Windows 全局低级鼠标钩子、事件分发 |
@@ -238,9 +254,10 @@ mouse-gesture-actions/
 │  ┌──────────────────┐   │  ┌──────────────────┐   │
 │  │ 品牌标识          │   │  │                  │   │
 │  │ 状态提示          │   │  │  功能首页 /       │   │
-│  │ 暂停组合监听按钮  │   │  │  鼠标按键测试页   │   │
-│  │ ─ 功能首页        │   │  │                  │   │
+│  │ 暂停组合监听按钮  │   │  │  鼠标按键测试页 / │   │
+│  │ ─ 功能首页        │   │  │  帮助中心窗口     │   │
 │  │ ─ 鼠标按键测试    │   │  │                  │   │
+│  │ ─ ❓ 帮助说明     │   │  │                  │   │
 │  │                  │   │  │                  │   │
 │  │ 快捷工具区        │   │  │                  │   │
 │  │ ─ 计算器/浏览器/  │   │  │                  │   │
@@ -334,6 +351,8 @@ GitHub 链接颜色：
 | V2.0 | 映射支持"增强粘贴" |
 | V2.1 | 主窗口关闭确认（确认关闭/最小化/取消） |
 | V2.2 | 侧栏底部 GitHub 项目名称和可点击链接 |
+| V2.3 | 映射 2"增强粘贴"升级为整行大切换按钮（加高加粗、启用绿色高亮） |
+| V2.4 | 左侧新增"❓ 帮助说明"：三级帮助中心浏览窗口 + 首页/返回上级/上一页/下一页导航与面包屑，覆盖五个模块 |
 
 ---
 
@@ -345,7 +364,7 @@ GitHub 链接颜色：
 |------|------|
 | 项目名称 | 下载流程优化工具 |
 | 仓库地址 | https://github.com/szboboxing/download-optimizer |
-| 当前版本 | v3.11 |
+| 当前版本 | v3.18 |
 | 开发语言 | Python 3.9+（实际使用 3.13） |
 | GUI 框架 | Tkinter / ttk |
 | 运行平台 | Windows 10 / Windows 11 |
@@ -512,7 +531,7 @@ download-optimizer/
 ```
 ┌─────────────────────────────────────────┐
 │         下载流程优化工具                 │
-│         v3.11 — 选择一种模式开始         │
+│         v3.18 — 选择一种模式开始         │
 │                                         │
 │  ┌──────────────┐  ┌──────────────┐   │
 │  │ 📁            │  │ 📄            │   │
@@ -558,13 +577,13 @@ BORDER = "#E0E0E0"          # 边框
 ### 6. 打包方式
 
 ```powershell
-pyinstaller --onefile --name "下载流程优化工具_v3.11" ^
+pyinstaller --onefile --name "下载流程优化工具_v3.18" ^
     --hidden-import win32com --hidden-import win32com.client ^
     --hidden-import pythoncom --hidden-import pywintypes ^
     --noconsole main.py
 ```
 
-产物路径固定为：`dist\下载流程优化工具_v3.11.exe`
+产物路径固定为：`dist\下载流程优化工具_v3.18.exe`；GitHub Release 附件名 `download-optimizer-v3.18.exe`（同一文件改名上传，SHA-256 不变）。
 
 ### 7. 约束与规则
 
@@ -586,6 +605,110 @@ pyinstaller --onefile --name "下载流程优化工具_v3.11" ^
 | v3.7-v3.9 | 历史过渡版本（双表状态同步等试验功能，后移除） |
 | v3.10 | 移除双表状态同步，新增可编辑比对列选择框，自动隐藏折叠 K/L 列 |
 | v3.11 | 复用现有 K/L 状态列不再增列，保留已有状态，重复数据显示"待上传（重复）"，随附 K/L 联动 Word 文档 |
+| v3.17 | 规则二调整为只比对横杠两边内容（无横杠文件按"整名+空右段"参与）；"帮助(H)"升级为四级下拉菜单（帮助→功能说明→功能模块→条目） |
+| v3.18 | 帮助说明升级为统一"帮助中心"浏览窗口：三级页面 + 首页/返回上级/上一页/下一页导航，条目可跨模块线性翻阅（v3.12-v3.16 为本地过渡迭代，无独立正式标签） |
+
+---
+
+## 项目三：个人作品集网站（8 个 index 页面）
+
+### 1. 项目概述
+
+| 项目 | 内容 |
+|------|------|
+| 项目名称 | 杰克陈 · 独立开发者作品集 |
+| 本地路径 | `C:\Users\SDKJ-\Desktop\个人网站\` |
+| 当前展示版本 | 下载流程优化工具 v3.18 / 鼠标手势动作小工具 V2.4（双线维护） |
+| 形态 | 纯静态网站，**非 Git 仓库**，无构建步骤、无后端 |
+| 技术栈 | 单文件 HTML5 + Tailwind CSS（CDN）+ 原生 JavaScript（内联），无框架、无外部数据文件 |
+| 页面数量 | 8 个正式页面 `index.html`、`index2.html` ~ `index8.html`；另有 `switcher-preview.html` 风格切换预览页（不属于 8 页同步范围） |
+| 页面关系 | 8 个页面是**同一内容的 8 种不同视觉设计风格**，信息内容完全等价，可独立打开 |
+
+八个页面的风格定位：
+
+| 文件 | 风格副标题 | 实现类型 |
+|------|-----------|----------|
+| index.html | （默认深色极客风） | 静态 HTML |
+| index2.html | （明亮卡片风） | 静态 HTML |
+| index3.html | （蓝灰商务风） | 静态 HTML |
+| index4.html | （简约浅色风） | 静态 HTML |
+| index5.html | Aurora（极光渐变风） | JS 数据驱动 |
+| index6.html | Obsidian Gold（黑曜金风） | JS 数据驱动 |
+| index7.html | AI Core（AI 科技风） | JS 数据驱动 |
+| index8.html | Nordic（北欧极简风） | JS 数据驱动 |
+
+### 2. 页面信息架构（8 页公共内容）
+
+1. **首屏/头部**：署名"杰克陈 · 独立开发者作品集"，简介与技术标签。
+2. **双项目展示卡**：每个项目一张卡片，包含项目名、一句话简介、功能细目、GitHub 仓库链接、最新版本徽章、发布日期、下载按钮（链接到对应 GitHub Release 页）。
+3. **版本时间线**：按时间倒序展示两个项目的版本条目，每条包含：版本号、发布日期、一句变更描述、完整 SHA-256（可点击复制）、缩写 SHA 展示（前 8 位 `...` 后 6 位）、Release 下载链接；最新两条带 `hot`/最新高亮标记。
+4. **状态区**：固定文案 `current: v3.18 / V2.4 双线维护`、`next: 收集反馈，规划下一版`、`open: issue / PR welcome`、`coffee: 右下角打赏入口`。
+5. **页脚**：GitHub 入口与打赏入口。
+
+### 3. 两种实现类型
+
+**A. 静态 HTML 型（index / index2 / index3 / index4）**
+- 时间线条目直接写死为 HTML，每条含 HTML 注释标记（如 `<!-- v3.18 -->`）、`<h3>` 版本号、日期 `<span>`、描述 `<p>`、`data-sha="完整SHA"` 复制按钮、缩写 SHA 文本、Release 链接。
+- 项目卡片头部直接写死最新版本徽章与日期。
+
+**B. JS 数据驱动型（index5 / index6 / index7 / index8）**
+- 页面内嵌 JavaScript releases 数组，由 JS 渲染桌面端时间线。对象字段：
+  - `v`：版本号（如 `'v3.18'`、`'V2.4'`）
+  - `d`：发布日期（`YYYY-MM-DD`）
+  - `s`：一句变更描述
+  - `sha`：完整 SHA-256
+  - `url`：GitHub Release 链接（`.../releases/tag/v3.18`）
+  - `hot: true`：最新版高亮
+  - `m`：仅 index7 使用，`false` = 下载流程项目，`true` = 鼠标手势项目
+- **注意**：这 4 个页面同时保留一份写死的移动端静态时间线（HTML），更新时数据数组和静态条目两处都要改。
+- 项目卡片头部同样是写死 HTML，需要单独改。
+
+### 4. 版本发布时的同步规则（硬约束）
+
+任一桌面工具发版后，**8 个页面必须全部更新**，并做零残留检查。需要替换的字段：
+
+| 字段 | 下载流程工具 | 鼠标手势工具 |
+|------|-------------|-------------|
+| 版本号（小写 v / 大写 V 不可混） | `vX.Y` | `VX.Y` |
+| 发布日期 | Release 当天 `YYYY-MM-DD` | Release 当天 |
+| 完整 SHA-256 | 本地 EXE 哈希（Release 附件即同文件） | **GitHub Actions CI 附件的哈希**（与本地构建不同，从 Release 的 `SHA256.txt` 取） |
+| 缩写 SHA | 前 8 位 + `...` + 后 6 位 | 同规则 |
+| 描述文案 | 一句更新点（不同位置有长短两种措辞） | 同左 |
+| Release 链接 | `https://github.com/szboboxing/download-optimizer/releases/tag/vX.Y` | `https://github.com/szboboxing/mouse-gesture-actions/releases/tag/VX.Y` |
+| 状态区 | 8 页全部 `current:` 行同步改双线版本号 | 同左 |
+| 数据数组 hot 标记 | index5-8 最新一条保持 `hot:true` | 同左 |
+
+更新后必须 grep 验证旧版本号、旧日期、旧 SHA 在 8 个文件中零残留。
+**部署说明**：这些是本地 HTML 文件，如何发布到线上由用户自行部署，AI 不假设部署方式。
+
+### 5. 迁移要求
+
+- 保持单文件、零构建、CDN 引 Tailwind 的约束，可直接双击在浏览器打开。
+- 8 个页面视觉必须不同但信息等价；新增风格页面时同样纳入发布同步范围。
+- 页面为响应式设计（移动端时间线在数据驱动页另有静态实现），重建时保留移动断点行为。
+
+---
+
+## 统一发布 SOP（两个桌面工具通用）
+
+任一工具迭代发版时，严格按以下顺序执行：
+
+1. **改代码**：实现需求；同步更新 README、项目内 PRD/版本文档；涉及帮助内容的同步更新帮助菜单/帮助中心文案。
+2. **测试**：跑完整 `python -m unittest discover -s tests`，全部通过。
+3. **升版本**（四处必须一致）：
+   - 鼠标手势：`version.py` 的 `APP_VERSION`（唯一版本源）、运行 `python tools\generate_version_info.py`、新建 `docs/releases/VX.Y.md`（首行标题须含版本号）、更新 `tests\test_release_management.py` 的版本断言与保留版本序列。
+   - 下载流程：更新 `app.py` 内版本号与 README/Release 说明。
+4. **构建**：
+   - 鼠标手势按 `build.ps1` 步骤手动执行（本机 PowerShell 执行策略限制，不直接运行 ps1）：测试 → generate_version_info →（generate_icon 可选）→ PyInstaller spec → `retain_latest_releases.py dist --keep 2`。
+   - 下载流程：PyInstaller 单文件打包，dist 只保留最近两个 EXE（**保留数量为硬约束，变更必须先征得用户确认**）。
+5. **校验**：`Get-FileHash <exe> -Algorithm SHA256` 记录哈希；启动 EXE 冒烟，以窗口标题栏版本号为准。
+6. **Git 发布**：中文提交信息用 here-string 避免 PowerShell 引号分词；提交后用 `git show <tag> --stat` 验证标签确实打在新提交上（曾发生提交命令失败但 tag 已执行、标签误打旧提交的事故）；push main 与 tag。
+   - 鼠标手势：push `V*.*` 标签后 GitHub Actions（windows-latest）自动构建并发布 Release，附件 `mouse-gesture-actions-VX.Y.exe` + `SHA256.txt`；**CI 完成后必须复查 run 状态 success，并从 CI 的 SHA256.txt 取哈希**（CI 构建压缩参数与本地不同，哈希与本地 EXE 不同）。
+   - 下载流程：无发布 CI，用 GitHub REST API 手动创建 Release（token 通过 `git credential fill` 获取，本机无 gh CLI），附件名 `download-optimizer-vX.Y.exe`（本地 exe 改名副本）。
+7. **更新网站**：按"项目三 · 同步规则"更新 8 个 index 页面并做零残留检查。
+8. **更新本 PRD**：同步当前版本号、功能章节与版本历史表。
+
+**环境注意**：Windows PowerShell 5 不支持 `&&`，用 `;` 或 `$LASTEXITCODE` 判断串联；编辑 `.py` 后若编译报 U+FEFF，先查文件头是否出现双 BOM；GitHub 偶发连接重置，重试即可。
 
 ---
 
@@ -593,11 +716,13 @@ pyinstaller --onefile --name "下载流程优化工具_v3.11" ^
 
 ### 对 AI Code 工具的说明
 
-1. **两个项目完全独立**，代码不共享，可分别迁移。
-2. **均为 Windows 专用** GUI 应用，不支持 macOS/Linux GUI（核心逻辑可跨平台，但 COM 自动化和鼠标钩子仅 Windows）。
+1. **两个桌面项目完全独立**，代码不共享，可分别迁移；作品集网站是第三个独立资产，与两个桌面项目无代码耦合，仅通过版本号、SHA、Release 链接在发布时保持同步。
+2. **两个桌面项目均为 Windows 专用** GUI 应用，不支持 macOS/Linux GUI（核心逻辑可跨平台，但 COM 自动化和鼠标钩子仅 Windows）。
 3. **项目一**（鼠标手势）涉及 Windows 低级 API（`WH_MOUSE_LL`、`keybd_event`、`GetForegroundWindow`），迁移时需保持 ctypes 声明和线程模型不变。
 4. **项目二**（下载流程优化）的 `app.py` 是单文件约 1900 行，包含所有 GUI 和业务逻辑，迁移时可按需拆分为多模块。
 5. 两个项目均使用 **Tkinter** 而非 PyQt/wxPython，迁移时需注意 Tkinter 的线程限制（UI 操作必须在主线程）。
 6. 测试均使用 Python 标准库 `unittest`，不依赖 pytest。
 7. 版本规则：项目一用 `Vx.y`（大写 V），项目二用 `vx.y`（小写 v）。
 8. 本地保留最近两个版本的规则是**硬约束**，不可更改除非用户确认。
+9. **每次任一桌面项目迭代发版，必须自动完成三件事**：GitHub 发布（项目一走 CI、项目二手动 API）、8 个 index 页面全量同步、更新本 PRD；详见上文"统一发布 SOP"。
+10. 项目三为纯静态页面，迁移时保持无构建、无框架、CDN 依赖、双击可开的形态；SHA-256 用于让访客校验下载文件完整性，网站上的鼠标手势哈希以 CI 附件为准，不要误用本地构建哈希。
